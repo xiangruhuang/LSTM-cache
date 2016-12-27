@@ -1,0 +1,24 @@
+1. formatting data files:
+    cd ./data/dnn_ordered_traces/
+    make
+    # now only formatting is deleting the first column
+    # you can check ./data/dnn_ordered_traces/*.num to confirm
+    # maps for instructions and data are stored in ./data/dnn_ordered_traces/*.num.instr_map and ./data/dnn_ordered_traces/*.num.data_map, respectively. 
+    # But the maps were already taken care of. ( for now only instr_map is used )
+
+2. train: (e.g. dataset is gcc)
+    make gcc.train
+    # model files will be stored in ./gcc/
+
+3. test with test file:
+    make gcc.test
+    # prediction will be stored in ./gcc.pred
+
+4. test each sample:
+    check main.py, a demo is written in lines 122-190: 
+        pseudo code:
+            0) read LSTM model by saver.restore(...)
+            1) read batches of samples from test_reader (created from test file "./data/dnn_ordered_traces/gcc.num.test", then translated by instruction map )
+            2) at each step, feed one sample into LSTM model by model.predict(...)
+            3) do initialization by model.init()
+    You can modify this part of code.
