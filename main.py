@@ -38,9 +38,9 @@ def main(_):
     is_training = tf.placeholder(tf.bool)
     vals = model.run_batch(packed)
     #test = model.run_batch(packed, test_reader, False, model.cell)
-    init = tf.initialize_all_variables()
+    init = tf.global_variables_initializer()
    
-    saver = tf.train.Saver(tf.all_variables())
+    saver = tf.train.Saver(tf.global_variables())
     with tf.Session() as sess:
         sess.run(init)
         coord = tf.train.Coordinator()

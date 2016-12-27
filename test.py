@@ -33,9 +33,9 @@ def main(_):
     model = LSTMModel(config, train_reader, test_reader)
 
     """Define Computation Graph"""
-    init = tf.initialize_all_variables()
+    init = tf.global_variables_initializer()
    
-    saver = tf.train.Saver(tf.all_variables())
+    saver = tf.train.Saver(tf.global_variables())
     with tf.Session() as sess:
         sess.run(init)
         coord = tf.train.Coordinator()
