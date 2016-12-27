@@ -125,12 +125,12 @@ def main(_):
             fout = open(basename+".pred", 'w')
             test_acc = 0.0
             fin = open(FLAGS.data_path+'.test', 'r') 
-            data = [l[1:4] for l in fin.readlines()]
+            data = [l.strip().split()[1:4] for l in fin.readlines()]
             pred = []
             Y = []
             for (i, d) in enumerate(data):
-                d[0] = instr_map[d[0]]
                 #d[0] is instr addr, d[1] is prob, d[2] is true label
+                d[0] = instr_map[d[0]]
 
                 #initialize model, you can adjust this
                 if i % config.num_steps == 0:

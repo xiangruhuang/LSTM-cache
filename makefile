@@ -23,5 +23,5 @@ omnetpp.num_instr=1498
 	$(eval data = data/dnn_ordered_traces/$(b).num)
 	echo dataset=$b
 	$(eval num_instr = $($(b).num_instr))
-	python main.py --data_path=./$(data) --num_instr=$(num_instr) --is_training=False
+	python test.py --data_path=./$(data) --num_instr=$(num_instr) --is_training=False
 
