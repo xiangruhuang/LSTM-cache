@@ -16,6 +16,11 @@ import numpy
 #
 #read_numbers('../simple-examples/data/ptb.train.txt')
 
+def variable_summaries(var):
+    with tf.name_scope('summaries'):
+        mean = tf.reduce_mean(var)
+        tf.summary.scalar('mean', mean)
+
 def split_file(config, filename, offset, ratio):
     """Split the file into train, test, validate sets w.r.t. (ratio), each sample contains (config.num_steps) lines """
     with open(filename, 'r') as fin:

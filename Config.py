@@ -1,10 +1,10 @@
 from utils import *
 class Config(object):
-    def __init__(self):
+    def __init__(self, feattype='feat'):
         """Small Size"""
         #self.init_scale = 0.1
-        self.learning_rate = 0.001
-        self.lr_decay = 0.95
+        self.learning_rate = 1e-4
+        self.lr_decay = 0.99
         self.max_epoch = 100
         
         self.num_layers = 2
@@ -12,9 +12,13 @@ class Config(object):
         
         self.keep_prob = 1.0
         
+        self.T = 100
         self.num_steps = 300
         self.batch_size = 128
-        self.input_dim = 2
+        if feattype=='feat3':
+            self.input_dim = self.T*3+1
+        else:
+            self.input_dim = self.T+1
         self.output_dim = 1
         self.num_instr = 0
 
@@ -37,5 +41,9 @@ class Config(object):
         s += '\n\thidden size=' + str(self.hidden_size)
         s += '\n\tkeep prob=' + str(self.keep_prob)
         s += '\n\tnum steps=' + str(self.num_steps)
+        s += '\n\tinput dim=' + str(self.input_dim)
+        s += '\n\toutput dim=' + str(self.output_dim)
         s += '\n\tbatch size=' + str(self.batch_size)
+
         return s
+    
