@@ -54,3 +54,20 @@ def split_file(config, filename, offset, ratio):
             test.writelines([lines[index] for index in test_indices])
         with open(filename + '.valid', 'w') as valid:
             valid.writelines([lines[index] for index in valid_indices])
+
+def split_into_batches(config, filename):
+    with open(filename, 'r') as fin:
+        lines = fin.readlines()
+        lines_per_file = config.num_steps * config.batch_size
+        for count, i in enumerate(range(0, len(lines), lines_per_file)):
+            with open(filename + '.' + str(count), 'w') as fout:
+                if i + lines_per_file -1 < len(lines):
+                    fout.writelines(lines[i:i+lines_per_file])
+                else:
+                    num_written = len(lines[i:len(lines)])
+                    fout.writelines(lines[i:])
+                    for j in range(num_written, line_per_file):
+                        fout.writelines(lines[-1])
+
+def list_shape(l):
+    print(numpy.asarray(l).shape)

@@ -6,14 +6,16 @@ import os
 import re
 
 class Reader(object):
-    def __init__(self, _data_path, config, instr_map=None, shuffle=False):
+    def __init__(self, _data_path, config, instr_map=None, shuffle=False, name_list=[]):
         self.config = config
         self.data_path = _data_path
         name = self.data_path.split('/')[-1]
         basename = self.data_path.split('/')[-1].split('.')[0]
         path = os.path.dirname(self.data_path)
 
+        #flist = name_list
         flist = [os.path.join(path, f) for f in os.listdir(path) if (f.split('.')[:-1] == name.split('.'))]
+        print(flist)
         #if len(flist) == 0:
         #    fin = open(_data_path, 'r')
         #    lines = fin.readlines()
@@ -61,6 +63,8 @@ class Reader(object):
         #self.packed = self.data[i]
         #self.packed = tf.reshape(self.packed, [config.batch_size, config.sample_dim])
         filename_queue = tf.train.string_input_producer(flist, shuffle=self.shuffle)
+        #self.enqueue_placeholder = tf.placeholder(dtype=tf.string)
+        #self.enqueue_op = filename.enqueue(self.enqueue_placeholder)
         reader = tf.TextLineReader()
         keys, values = reader.read_up_to(filename_queue, config.num_steps*config.batch_size)
         record_defaults = [[0.0] for i in range(config.input_dim+config.output_dim)]
@@ -99,3 +103,6 @@ class Reader(object):
     #    #Z = [numpy.rint(sample[:, config.input_dim+1]).astype(int) for sample in next_batch]
     #    #Z = [tf.cast(tf.round(sample[:, config.input_dim+1]), tf.int32) for sample in splitted]
     #    return {'features':X, 'output':Y}
+
+    def include_datafile(self, sess, filename):
+        sess.run(self.enqueue_op, feed_dict={self.enqueue_placeholder:filename})

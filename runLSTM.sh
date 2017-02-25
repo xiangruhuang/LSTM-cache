@@ -6,5 +6,5 @@
 #make data=data/dnn_ordered_traces/xalancbmk.num num_instr=2249
 #make gcc.train feat=feat3
 #make soplex.train feat=feat2
-make omnetpp.train feat=feat3
-make soplex.train feat=feat3
+#make omnetpp.train feat=feat3
+#make soplex.train feat=feat3

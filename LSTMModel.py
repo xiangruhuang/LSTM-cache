@@ -1,118 +1,144 @@
-from flags import *
-from itertools import chain
-#from Config import *
-#from Reader import *
+from __future__ import print_function
 
-from tensorflow.python.ops import control_flow_ops
-from tensorflow.python.util import nest
-from tensorflow.python.ops import array_ops
-from tensorflow.python.framework import tensor_shape
+import tensorflow as tf
 
 class LSTMModel(object):
-    def __init__(self, config):
-        print("initializing LSTM Model:")
-        print("\t #hidden units=%d, #layers=%d" % (config.hidden_size, config.num_layers) )
-        
-        self.config = config
-        self.weights = {'out':tf.Variable(tf.random_normal([config.hidden_size, config.output_dim]), trainable=True)}
-        #variable_summaries(self.weights['out'])
-        self.biases = {'out':tf.Variable(tf.random_normal([config.output_dim]), trainable=True)}
-        #variable_summaries(self.biases['out'])
-        #self.train_reader = train_reader
-        #self.test_reader = test_reader
 
-        lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=config.hidden_size, forget_bias=0)
-        """Dropout"""
-        lstm_cell = tf.nn.rnn_cell.DropoutWrapper(lstm_cell, output_keep_prob=config.keep_prob)
+    """Internal Class for compactly storing Parameters
+    Fields:
+        dims: 
+            dims[0] is input dimension (can be None),
+            dims[1:-1] is hidden layers' size,
+            dims[-1] is output dimension,
+            e.g. [10, 20, 30, 1] means a input layer of dimension 10, 
+                then two hidden layers of dimension 20 and 30, 
+                then a output layer of dimension 1
+    """
+    class Params(object):
+        def __init__(self, dims=None, num_steps=None, batch_size=None, 
+                reuse=False, name='default'):
+            """Params.name is a template, while LSTMModel.name is 
+                a instance (usually suffixed with unique numbers)"""
+            self.name = name
+            assert(len(dims) >= 3, 'Constructing LSTMModel.Params(%s)' 
+                'at least one input, hidden, output layer' % name)
+            self.input_dim = dims[0]
+            self.hidden_sizes = dims[1:-1]
+            self.output_dim = dims[-1]
+            self.num_layers = len(self.hidden_sizes)
+            self.num_steps = num_steps
+            
+            self.num_steps = num_steps
+            self.batch_size = batch_size
+            self.reuse = reuse
     
-        self.cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers, state_is_tuple=True)
-        self.init = self.cell.zero_state(config.batch_size, tf.float32)
+        @property
+        def input_shape(self, num_steps, batch_size):
+            return tf.placeholder(tf.float32, 
+                    shape=(num_steps, batch_size, self._input_dim))
+    
+        @property
+        def output_shape(self, num_steps, batch_size):
+            return tf.placeholder(tf.float32, 
+                    shape=(num_steps, batch_size, self._output_dim))
+    
+        def to_string(self):
+            s  = '\tname=' + self.name+'\n'
+            s += '\tinput dim=' + str(self.input_dim)+'\n'
+            s += '\thidden layer sizes=' + str(self.hidden_sizes)+'\n'
+            s += '\toutput dim=' + str(self.output_dim)+'\n'
+            s += '\tnum steps=' + str(self.num_steps)+'\n'
+            s += '\tbatch size=' + str(self.batch_size)
+            return s
+
+    @classmethod
+    def _get_unique_name(cls, name):
+        if not hasattr(cls, 'name_count_map'):
+            cls.name_count_map = {}
+        if not (name in cls.name_count_map):
+            cls.name_count_map[name] = 0
+        name_count = cls.name_count_map[name]
+        cls.name_count_map[name] += 1
+        fullname = name + str(name_count)
+        return fullname
+
+    def get_scope(self, name, reuse=False):
+        if not hasattr(self, 'scope_map'):
+            self.scope_map={}
+        if not (name in self.scope_map):
+            self.scope_map[name] = tf.VariableScope(None, name)
+        elif reuse:
+            self.scope_map[name].reuse_variables()
+        return self.scope_map[name]
+
+    def __init__(self, params):
+        assert(isinstance(params, self.Params), "params should be an instance of"
+            "LSTMModel.Params")
+        self.params = params
         
-        self.input = [tf.placeholder(shape=(1, config.input_dim), dtype=tf.float32)]
+        """different variables/tensors/operations should have different names
+            best way to manage names is to use scopes
+        """
+        fullname = self._get_unique_name(params.name)
+        self.fullname = fullname
+        with tf.variable_scope(self.get_scope(fullname), reuse=False):
+            lstm_cells = [tf.contrib.rnn.BasicLSTMCell(
+                num_units=hidden_size_i, forget_bias=1.0, state_is_tuple=True
+                ) for hidden_size_i in params.hidden_sizes]
+            self.cell = tf.contrib.rnn.MultiRNNCell(lstm_cells)
+    
+    @classmethod
+    def from_raw_params(cls, dims, num_steps, batch_size, 
+            reuse=False, name='default'):
+        params = cls.Params(dims, num_steps, batch_size, reuse, name)
+        return cls(params)
+        
+    """Build a One Step feed-forward data flow.
+    
+    Fields:
+        inputs: Tensor or placeholder with shape [batch_size, input_dim]
+        state: Cell state to start with, if it is None, use cell.zero_state.
+    
+    Return:
+        outputs: Tensor of shape [batch_size, output_dim]
+        next_state: same shape as state
+    """
+    def feed_forward(self, inputs, state=None, output_dim=None,
+            activation=None):
+        [batch_size, input_dim]=inputs.get_shape().as_list()
+        inputs = tf.Print(inputs, [0], self.fullname+'/feed_forward'+str(output_dim))
+        with tf.get_default_graph().control_dependencies([inputs]):
+            if state is None:
+                state = self.cell.zero_state(batch_size, tf.float32)
+            with tf.variable_scope(self.get_scope(self.fullname+'/inputs_'+str(input_dim)
+                , reuse=True)):
+                outputs, next_state = self.cell(inputs, state=state)
+            with tf.variable_scope(self.get_scope(self.fullname+'/outputs_'+str(output_dim)
+                , reuse=True)): 
+                #outputs = tf.Print(outputs, [output_dim], 'feed forward on '+self.fullname)
+                if output_dim is not None:
+                    output_weights = tf.get_variable('out_weights'
+                            , initializer=tf.random_normal(
+                                [self.params.hidden_sizes[-1], output_dim]))
+                    output_biases = tf.get_variable('out_biases'
+                            , initializer=tf.random_normal([output_dim]))
+                    #output_weights = tf.Variable(tf.random_normal(
+                    #[self.params.hidden_sizes[-1], output_dim]), name='out_weights'+str(output_dim))
+                    #output_biases = tf.Variable(tf.random_normal([output_dim])
+                    #, name='out_biases'+str(output_dim))
+                    outputs = tf.matmul(outputs, output_weights) + output_biases
+                    if activation is not None:
+                        outputs = activation(outputs)
+            #outputs = tf.Print(outputs, [outputs], self.fullname+'/feed_forward'+str(output_dim))
+            #with tf.get_default_graph().control_dependencies([outputs]):
+            #outputs = tf.Print(outputs, [outputs], self.fullname+'/feed_forward'+str(output_dim)+'_outputs:'+message)
+            ans = {}
+            #with tf.get_default_graph().control_dependencies([outputs]):
+            ans['outputs'] = outputs
+            ans['states'] = next_state
+            return ans
 
-        state_size = self.cell.state_size
-        state_size_flat = nest.flatten(state_size)
-        self.state_flat = [tf.placeholder(shape=[1, s], dtype=tf.float32) for s in state_size_flat]
-        with tf.variable_scope("RNN"):
-            self.state = nest.pack_sequence_as(structure=state_size, flat_sequence=self.state_flat)
-            (self.output, self.next_state) = rnn.rnn(self.cell, self.input, initial_state=self.state, dtype=tf.float32)
-            self.output = tf.pack([tf.sigmoid(tf.matmul(output_t, self.weights['out']) + self.biases['out']) for output_t in self.output])
 
-    #def run_epoch(self, session, fetches, num_batches):
-    #    #self.pred = [tf.sigmoid(tf.matmul(output_t, self.weights['out']) + self.biases['out']) for output_t in outputs]
-    #    #self.accuracy = tf.reduce_mean(tf.abs(tf.sub(self.pred, reader.Y)))
-    #   
-    #    accuracy = 0
-    #    for i in range(num_batches):
-    #        vals = session.run(fetches)
-    #        print(vals["outputs"])
-    #        #accuracy += vals["accuracy"]
-    #   
-    #    return accuracy/num_batches
+    def initial_state(self, batch_size):
+        return self.cell.zero_state(batch_size, dtype=tf.float32)
 
-    def run_batch(self, packed):
-        config = self.config
-        splitted = tf.split(1, config.num_steps, packed)
-        #indices = [tf.to_int64(tf.pack(list(chain.from_iterable(([t, s_t[0]], [t, (config.num_instr+1)]) for t, s_t in enumerate(tf.unpack(sample)))))) for sample in splitted]
-        #print(indices[0].get_shape())
-        #values = [tf.pack(list(chain.from_iterable((1, s_t[1]) for s_t in tf.unpack(sample)))) for sample in splitted]
-        #print(values[0].get_shape())
-        #shape = tf.constant([config.num_steps, (config.num_instr+1)], dtype=tf.int64)
-        X = [sample[:, :config.input_dim] for sample in splitted]
-        print(sample[0].get_shape())
-        #X = []
-        #for sample in splitted:
-        #    a = []
-        #    for t, s_t in enumerate(tf.unpack(sample)):
-        #        indices = tf.to_int64(tf.pack([[tf.to_int64(s_t[0])], [tf.constant(config.num_instr, dtype=tf.int64)]]))
-        #        values = tf.pack([tf.constant(1.0), s_t[1]])
-        #        b = tf.SparseTensor(indices=indices, values=values, shape=tf.constant([config.num_instr+1], dtype=tf.int64))
-        #        b = tf.sparse_tensor_to_dense(b)
-        #        a.append(b)
-        #    a = tf.pack(a)
-        #    X.append(a)
-        """time_steps * batch_size * input_dim"""
-        print(len(X), X[0].get_shape())
-
-        Y = tf.pack([sample[:, config.input_dim:(config.input_dim+config.output_dim)] for sample in splitted])
-        #Z = [tf.cast(tf.round(sample[:, config.input_dim+1]), tf.int32) for sample in splitted]
-
-        #X[0] = tf.Print(X[0], [X[0].get_shape()])
-
-        with tf.variable_scope("RNN") as scope:
-            scope.reuse_variables()
-            outputs, states = rnn.rnn(self.cell, X, initial_state=self.init, dtype=tf.float32)
-            #return outputs, states
-            pred = tf.pack([tf.sigmoid(tf.matmul(output_t, self.weights['out']) + self.biases['out']) for output_t in outputs])
-            int_pred = tf.round(pred)
-        #Y = tf.Print(Y, [tf.reshape(Y, [-1])])
-        acc = 1.0-tf.reduce_mean(tf.abs(tf.sub(int_pred, Y)))
-        cost = tf.nn.l2_loss(tf.sub(pred, Y))
-        #variable_summaries(acc)
-        #variable_summaries(cost)
-        #cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(pred, Y))
-        #cost = tf.Print(cost, [cost], message='cost=')
-        optimizer = tf.train.AdamOptimizer(learning_rate=config.learning_rate)
-        #get a list of tuple (gradient, variable)
-        grads_and_vars = optimizer.compute_gradients(cost)
-        optimizer = optimizer.apply_gradients(grads_and_vars)
-        return {'acc':acc, 'cost':cost, 'opt':optimizer, 'pred':int_pred, 'grad':grads_and_vars, 'Y':Y}
-        #return {'acc':acc, 'cost':cost, 'optimizer':optimizer}
-
-    def predict(self, sess, f):#instr_addr, prob):
-        this_input = [f]#numpy.zeros([1, self.config.num_instr+1])
-        #this_input[0, int(instr_addr)] = 1.0
-        #this_input[0, -1] = prob
-        this_input = [this_input]
-        feed_dict = {}
-        for i, d in zip(self.state, self.current_state):
-            feed_dict[i] = d
-        #{i: d for i, d in zip(self.state, self.current_state)}
-        for i, d in zip(self.input, this_input):
-            feed_dict[i] = d
-        (output, self.current_state) = sess.run([self.output, self.next_state], feed_dict=feed_dict)
-        return output
-
-    def inite(self, sess):
-        self.current_state=sess.run(self.cell.zero_state(1, dtype=tf.float32))
-        #print(current_state)

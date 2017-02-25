@@ -1,6 +1,8 @@
 import sys
 import json
 import numpy
+sys.path.append('/home/xiangru/Projects/LSTM-cache/')
+from Config import *
 
 class Record(object):
     def __init__(self, t, data, instr, prob, Y):
@@ -12,8 +14,8 @@ class Record(object):
         assert(Y != 0.5)
 
 class Records(object):
-    def __init__(self, data_map, instr_map):
-        self.T = 100
+    def __init__(self, data_map, instr_map, config):
+        self.T = config.T
 
         self.data_map = data_map
         self.instr_map = instr_map
@@ -104,7 +106,7 @@ json.dump(data_dict, open(sys.argv[2]+'.data_map', 'w'))
 """data_addr, instr_addr, prob, truelabel"""
 samples = [l.strip().split(' ')[1:5] for l in lines] # skip some lines
 
-records = Records(data_map = data_dict, instr_map = instr_dict)
+records = Records(data_map = data_dict, instr_map = instr_dict, config = Config())
 
 unknown_count = 0
 total = 0
