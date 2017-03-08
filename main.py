@@ -4,10 +4,12 @@ from __future__ import print_function
 
 import collections
 import os
+
+
 import sys
 
 import tensorflow as tf
-
+import numpy
 from tensorflow.contrib.rnn.python.ops.core_rnn_cell_impl import LSTMStateTuple
 
 from rnn_utils import *
@@ -137,7 +139,18 @@ def get_random_batch(samples, batch_size, num_steps, instr_ids, part):
         else:
             baseline_predictions.append([1])
     baseline_acc = 1.0 - numpy.mean(abs(numpy.asarray(labels)-numpy.asarray(baseline_predictions)))
+    ups = [0.0 for i in range(len(instr_ids))]
+    downs = [0.0 for i in range(len(instr_ids))]
+    for i, id_subset in enumerate(instr_ids):
+        for s, sample in enumerate(subsamples):
+            if sample.instr_id in id_subset:
+                downs[i] += 1.0
+                if baseline_predictions[s][0] == sample.y:
+                    ups[i] += 1.0
     conditions = [[bool(sample.instr_id in id_subset) for id_subset in instr_ids] for sample in subsamples]
+    #print('loads=', [numpy.mean(
+    #    [1.0 if sample.instr_id in id_subset else 0.0 for sample in subsamples]) 
+    #    for id_subset in instr_ids])
     """feature has shape [batch_size*num_steps, input_dim]"""
     """feature_batch has shape [num_steps, batch_size, input_dim]"""
     feature_batch = numpy.transpose(numpy.array_split(features, batch_size), [1, 0, 2])
@@ -148,7 +161,21 @@ def get_random_batch(samples, batch_size, num_steps, instr_ids, part):
     #print('feature batch has shape %s', feature_batch.shape)
     #print('label   batch has shape %s', label_batch.shape)
     #print('condition batch has shape %s', condition_batch.shape)
-    return feature_batch, label_batch, condition_batch, baseline_acc
+    return feature_batch, label_batch, condition_batch, baseline_acc, ups, downs
+
+def get_ups_and_downs(instr_ids, label_batch, condition_batch, pred_batch):
+    ups = [0.0 for ids in range(len(instr_ids))]
+    downs = [0.0 for ids in range(len(instr_ids))]
+    num_steps = len(label_batch)
+    batch_size = len(label_batch[0])
+    for t in range(num_steps):
+        for b in range(batch_size):
+            subacc = 1.0 - abs(label_batch[t, b, 0] - pred_batch[t, b, 0])
+            for i in range(len(instr_ids)):
+                if condition_batch[t, b, i] == True:
+                    ups[i] += subacc
+                    downs[i] += 1.0
+    return ups, downs
 
 def main(_):
     """Initialization"""
@@ -161,18 +188,19 @@ def main(_):
     foldername = (FLAGS.data_path).split('/')[-1]
     basename = foldername.split('.')[0]
     feattype = foldername.split('.')[1]
+    model_dir = FLAGS.model_dir
 
     C = tf.Graph()
     with C.as_default():
         with tf.name_scope('config'):
-            config = Config(feattype=feattype)
+            config = Config(feattype=feattype, FLAGS=FLAGS)
             config.num_instr=int(FLAGS.num_instr)
 
         print('dataset=', basename, ', #instr=', config.num_instr)
         print(config.to_string())
        
         print("Reading Data...")
-        with tf.device('/cpu'), tf.name_scope('readers'):
+        with tf.name_scope('readers'):
             with open(FLAGS.data_path+'/instr.all') as fin:
                 lines = fin.readlines()
                 samples = [Sample.from_line(line, t) for 
@@ -181,7 +209,8 @@ def main(_):
                 dist = {i:0 for i in range(config.num_instr)}
                 for sample in samples:
                     dist[sample.instr_id] += 1
-                pairs = sorted([(i, dist[i]) for i in range(config.num_instr)], key=lambda x:x[1])
+                pairs = sorted([(i, dist[i]) for i in 
+                    range(config.num_instr)], key=lambda x:x[1], reverse=True)
         
 
         print("Building Computation Graph...")
@@ -212,9 +241,10 @@ def main(_):
                             , shape=[config.num_steps, config.batch_size
                             , config.num_learners]) 
             
-            conditions = tf.Print(conditions, [conditions], 'feed in', summarize=10000)
+            #conditions = tf.Print(conditions, [conditions], 'feed in', summarize=10000)
 
-            #tf.constant(False, shape=[config.num_steps, config.batch_size, config.num_learners])
+            #switchs = tf.placeholder(dtype=tf.int32
+            #                , shape=[config.num_steps, config.batch_size])
             
             """Context LSTM.
                 Input: <forward, [batch_size, 1]>
@@ -222,25 +252,35 @@ def main(_):
                 Output: <context_feature, [batch_size, 20]>
             """
             context = LSTMModel(config.context_params)
-            learners = [Learner(config.local_params) 
+            learners = [Learner(config.local_params)
                     for i in range(config.num_learners)]
             cells = [learner.lstm for learner in learners]
-            states = [[learner.lstm.initial_state(1) 
-                    for learner in learners] 
+            states = [[learner.lstm.initial_state(1)
+                    for learner in learners]
                     for b in range(config.batch_size)]
             context_state = context.initial_state(config.batch_size)
             outputs = []
             
+            #context_input = tf.unstack(global_features[:, :, 0:1])
+            #context_output =tf.contrib.rnn.static_rnn(context
+            #        , inputs = context_input
+            #        , state = context_state
+            #        , output_dim = context.params.output_dim
+            #        , activation=tf.sigmoid)['outputs']
+            #assert(context_output.get_shape().as_list()==
+            #        [config.batch_size, context.params.output_dim])
+
             for t in range(config.num_steps):
+                var_sizes = [numpy.product(list(map(int, v.get_shape())))*v.dtype.size
+                    for v in tf.global_variables()]
+                print("time step %d:" % t)
                 global_feature_t = global_features[t, :, 0:1]
                 assert(global_feature_t.get_shape().as_list()==
                         [config.batch_size, config.context_params.input_dim])
-                vals = context.feed_forward(
+                context_feature, context_state = context.feed_forward(
                         global_feature_t, state = context_state
                         , output_dim=context.params.output_dim
                         , activation=tf.sigmoid)
-                context_feature = vals['outputs']
-                context_state = vals['states']
                 local_input = tf.concat([context_feature
                         , global_features[t, :, 1:]], axis=1)
                 assert(local_input.get_shape().as_list()==
@@ -254,7 +294,7 @@ def main(_):
                 , config.batch_size, config.local_params.output_dim])
             cost = tf.nn.l2_loss(outputs - labels)
             int_pred = tf.round(outputs)
-            acc = 1.0 - tf.reduce_mean(tf.abs(outputs-labels))
+            acc = 1.0 - tf.reduce_mean(tf.abs(int_pred-labels))
             """minimizer for this lstm"""
             optimizer = tf.train.AdamOptimizer(
                     learning_rate=config.learning_rate)
@@ -265,9 +305,9 @@ def main(_):
                     grad = tf.Print(grad, [grad], str(var.name))
             optimizer = optimizer.apply_gradients(grads_and_vars)
             if FLAGS.is_training:
-                evals = {'optimizer':optimizer, 'acc':acc}
+                evals = {'optimizer':optimizer, 'acc':acc, 'pred':int_pred}
             else:
-                evals = {'acc':acc}
+                evals = {'acc':acc, 'pred':int_pred}
             
             init = tf.global_variables_initializer()
             #print(global_vars)
@@ -284,9 +324,10 @@ def main(_):
             saver = tf.train.Saver(tf.trainable_variables())
             
         print([(v.name, v.get_shape()) for v in tf.trainable_variables()])
-        
 
-    with tf.Session(graph=C) as sess:
+    configProto = tf.ConfigProto(allow_soft_placement=True)
+    configProto.gpu_options.allow_growth=True
+    with tf.Session(graph=C, config=configProto) as sess:
         sess.run(init)
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -294,23 +335,23 @@ def main(_):
         for i in range(config.num_instr):
             (instr_id, freq) = pairs[i]
             l = min(i, config.num_learners-1)
+            l = (l + 1) % config.num_learners
             ids[l].append(instr_id)
-
+        print(ids)
+        
         acc_sum = 0.0
         if FLAGS.is_training:
-            lc = tf.train.latest_checkpoint('./'+foldername+'/')
+            lc = tf.train.latest_checkpoint(model_dir+'/')
             if lc is not None:
                 saver.restore(sess, lc)
-            evals = {'optimizer':optimizer, 'acc':acc}
         else:
-            lc = tf.train.latest_checkpoint('./'+foldername+'/')
+            lc = tf.train.latest_checkpoint(model_dir+'/')
             assert( not (lc is None) )
             saver.restore(sess, lc)
-            evals = {'acc':acc}
 
         num_batches = len(samples)//(config.batch_size*config.num_steps)
-        num_train_batches = 100 #get_split(num_batches)
-        num_test_batches = 100 #num_batches - num_train_batches
+        num_train_batches = num_batches//(4*config.max_epoch)*3 #get_split(num_batches)
+        num_test_batches = num_batches//(4*config.max_epoch) #num_batches - num_train_batches
         for e in range(config.max_epoch):
             print('epoch=%d, #train=%d, #test=%d...' % (e, num_train_batches, num_test_batches))
             print('training...', end="")
@@ -318,45 +359,72 @@ def main(_):
             baseline_train_acc = 0.0
             train_acc = 0.0
             st = time.time()
+            baseline_ups = numpy.asarray([0.0 for i in range(config.num_learners)])
+            baseline_downs = numpy.asarray([0.0 for i in range(config.num_learners)])
+            lstm_ups = numpy.asarray([0.0 for i in range(config.num_learners)])
+            lstm_downs = numpy.asarray([0.0 for i in range(config.num_learners)])
             for train_iter in range(num_train_batches):
                 """output has shapes [num_steps, batch_size, XXX]"""
-                global_feature_data, label_data, condition_data, baseline_acc = \
-                        get_random_batch(samples
+                global_feature_data, label_data, condition_data, baseline_acc, \
+                    ups, downs = get_random_batch(samples
                         , config.batch_size, config.num_steps, ids, 'train')
+                
                 values = sess.run(evals, feed_dict={
                         global_features:global_feature_data
                         , labels:label_data, conditions:condition_data})
                 train_acc += values['acc']
+                baseline_ups += numpy.asarray(ups)
+                baseline_downs += numpy.asarray(downs)
+                lstm_up, lstm_down = get_ups_and_downs(ids, label_data, condition_data, values['pred'])
+                lstm_ups += numpy.asarray(lstm_up)
+                lstm_downs += numpy.asarray(lstm_down)
                 baseline_train_acc += baseline_acc
-                if (train_iter+1) % 100 == 0:
+                if (train_iter+1) % 10 == 0:
                     ed = time.time()
-                    print('\titer=%d, train acc=%f, baseline train acc=%f, elapsed time=%f' 
+                    print('\titer=%d, train acc=%f, baseline train acc=%f, \n\t\tbaseline_details=%s'
+                        ', \n\t\tlstm_details=%s, \n\t\telapsed time=%f' 
                         % (train_iter, train_acc/float(train_iter+1)
-                            , baseline_train_acc/float(train_iter+1), (ed-st)))
+                            , baseline_train_acc/float(train_iter+1)
+                            , str(baseline_ups/baseline_downs)
+                            , str(lstm_ups/lstm_downs)
+                            , (ed-st)))
                     st = ed
             print('train acc=%f' % (train_acc/float(num_train_batches)))
-            saver.save(sess, './'+foldername+'/ckpt', global_step=e)
+            saver.save(sess, model_dir+'/ckpt', global_step=e)
             """testing"""
             print('testing...', end="")
             test_acc = 0.0
             baseline_test_acc = 0.0
             st = time.time()
+            up_total = numpy.asarray([0.0 for i in range(config.num_learners)])
+            down_total = numpy.asarray([0.0 for i in range(config.num_learners)])
+            lstm_ups = numpy.asarray([0.0 for i in range(config.num_learners)])
+            lstm_downs = numpy.asarray([0.0 for i in range(config.num_learners)])
             for test_iter in range(num_test_batches):
                 global_feature_data, label_data \
-                    , condition_data, baseline_acc = \
+                    , condition_data, baseline_acc, ups, downs= \
                     get_random_batch(samples, config.batch_size
                             , config.num_steps, ids, 'test')
-                baseline_test_acc += baseline_acc
-                test_acc += sess.run(acc, feed_dict={
+                test_acc_t, pred_t = sess.run([evals['acc'], evals['pred']], feed_dict={
                     global_features:global_feature_data
                     , labels:label_data, conditions:condition_data})
-                if (test_iter+1) % 100 == 0:
+                test_acc += test_acc_t
+                baseline_test_acc += baseline_acc
+                up_total += numpy.asarray(ups)
+                down_total += numpy.asarray(downs)
+                lstm_up, lstm_down = get_ups_and_downs(ids, label_data, condition_data, pred_t)
+                lstm_ups += numpy.asarray(lstm_up)
+                lstm_downs += numpy.asarray(lstm_down)
+                if (test_iter+1) % 10 == 0:
                     ed = time.time()
-                    print('\r\titer=%d, test acc=%f, baseline test acc=%f, elapsed time=%f' 
+                    print('\titer=%d, test acc=%f, baseline test acc=%f, \n\t\tbaseline_details=%s, \n\t\tlstm_details=%s, \n\t\telapsed time=%f' 
                         % (test_iter, test_acc/float(test_iter+1)
-                            , baseline_test_acc/float(test_iter+1), (ed-st)))
+                            , baseline_test_acc/float(test_iter+1)
+                            , str(baseline_ups/baseline_downs)
+                            , str(lstm_ups/lstm_downs)
+                            , (ed-st)))
                     st = ed
-            print('\rtest acc=%f' % (test_acc/float(num_test_batches)))
+            print('test acc=%f' % (test_acc/float(num_test_batches)))
             
         coord.request_stop()
         coord.join(threads)
@@ -599,6 +667,8 @@ def main(_):
 #                #coord.request_stop()
 #                #coord.join(threads)
 
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"]=str(FLAGS.device)
 
 if __name__ == "__main__":
     tf.app.run()

@@ -1,6 +1,12 @@
 from __future__ import print_function
+from __future__ import division
 
 import tensorflow as tf
+import numpy
+from tensorflow.python.util import nest
+from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import nn_ops
+from tensorflow.python.ops import init_ops
 
 class LSTMModel(object):
 
@@ -81,7 +87,13 @@ class LSTMModel(object):
         """
         fullname = self._get_unique_name(params.name)
         self.fullname = fullname
-        with tf.variable_scope(self.get_scope(fullname), reuse=False):
+        self.count_map = {fullname:0}
+        with tf.variable_scope(fullname) as scope:
+            print(self.count_map)
+            count = self.count_map.get(scope.name, 0)
+            if count > 0:
+                scope.reuse_variables()
+            self.count_map[scope.name] = count + 1
             lstm_cells = [tf.contrib.rnn.BasicLSTMCell(
                 num_units=hidden_size_i, forget_bias=1.0, state_is_tuple=True
                 ) for hidden_size_i in params.hidden_sizes]
@@ -104,40 +116,46 @@ class LSTMModel(object):
         next_state: same shape as state
     """
     def feed_forward(self, inputs, state=None, output_dim=None,
-            activation=None):
+            activation=None, flat=False):
         [batch_size, input_dim]=inputs.get_shape().as_list()
-        inputs = tf.Print(inputs, [0], self.fullname+'/feed_forward'+str(output_dim))
-        with tf.get_default_graph().control_dependencies([inputs]):
-            if state is None:
-                state = self.cell.zero_state(batch_size, tf.float32)
-            with tf.variable_scope(self.get_scope(self.fullname+'/inputs_'+str(input_dim)
-                , reuse=True)):
-                outputs, next_state = self.cell(inputs, state=state)
-            with tf.variable_scope(self.get_scope(self.fullname+'/outputs_'+str(output_dim)
-                , reuse=True)): 
-                #outputs = tf.Print(outputs, [output_dim], 'feed forward on '+self.fullname)
-                if output_dim is not None:
-                    output_weights = tf.get_variable('out_weights'
-                            , initializer=tf.random_normal(
-                                [self.params.hidden_sizes[-1], output_dim]))
-                    output_biases = tf.get_variable('out_biases'
-                            , initializer=tf.random_normal([output_dim]))
-                    #output_weights = tf.Variable(tf.random_normal(
-                    #[self.params.hidden_sizes[-1], output_dim]), name='out_weights'+str(output_dim))
-                    #output_biases = tf.Variable(tf.random_normal([output_dim])
-                    #, name='out_biases'+str(output_dim))
-                    outputs = tf.matmul(outputs, output_weights) + output_biases
-                    if activation is not None:
-                        outputs = activation(outputs)
-            #outputs = tf.Print(outputs, [outputs], self.fullname+'/feed_forward'+str(output_dim))
-            #with tf.get_default_graph().control_dependencies([outputs]):
-            #outputs = tf.Print(outputs, [outputs], self.fullname+'/feed_forward'+str(output_dim)+'_outputs:'+message)
-            ans = {}
-            #with tf.get_default_graph().control_dependencies([outputs]):
-            ans['outputs'] = outputs
-            ans['states'] = next_state
-            return ans
-
+        #inputs = tf.Print(inputs, [0], self.fullname+'/feed_forward'+str(output_dim))
+        if state is None:
+            state = self.cell.zero_state(batch_size, tf.float32)
+        with tf.variable_scope(self.fullname+'/inputs_'+str(input_dim)) as scope:
+            count = self.count_map.get(scope.name, 0)
+            if count > 0:
+                scope.reuse_variables()
+            outputs, next_state = self.cell(inputs, state=state)
+            if count == 0:
+                var_sizes = [numpy.product(list(map(int, v.get_shape())))*v.dtype.size
+                    for v in tf.global_variables()]
+                print("creating variables, current variables size=%f MB" % 
+                        (sum(var_sizes)/(1024**2)))
+            self.count_map[scope.name] = count + 1
+        with tf.variable_scope(self.fullname+'/outputs_'+str(output_dim)) as scope:
+            count = self.count_map.get(scope.name, 0)
+            if count > 0:
+                scope.reuse_variables()
+            if output_dim is not None:
+                output_weights = tf.get_variable('out_weights'
+                    , [self.params.hidden_sizes[-1], output_dim]
+                    , initializer = tf.random_normal_initializer())
+                output_biases = tf.get_variable('out_biases'
+                        , [output_dim]
+                        , initializer=tf.constant_initializer(0.0))
+                outputs = tf.matmul(outputs, output_weights) + output_biases
+                if activation is not None:
+                    outputs = activation(outputs)
+            if count == 0:
+                var_sizes = [numpy.product(list(map(int, v.get_shape())))*v.dtype.size
+                    for v in tf.global_variables()]
+                print("creating variables, current variables size=%f MB" % 
+                        (sum(var_sizes)/(1024**2)))
+            self.count_map[scope.name] = count + 1
+        if flat:
+            return nest.flatten(outputs) + nest.flatten(next_state)
+        else:
+            return outputs, next_state
 
     def initial_state(self, batch_size):
         return self.cell.zero_state(batch_size, dtype=tf.float32)
