@@ -5,11 +5,11 @@ class Config(object):
             <prob, 1> <hist, self.history_len> <True Label, 1>"""
 
         """Data Parameters"""
-        if FLAGS.history_len is not None:
+        if (FLAGS is not None) and (FLAGS.history_len is not None):
             self.history_len = FLAGS.history_len
         else:
             self.history_len = 10
-        if FLAGS.num_steps is not None:
+        if (FLAGS is not None) and (FLAGS.num_steps is not None):
             self.num_steps = FLAGS.num_steps
         else:
             self.num_steps = 100
@@ -25,7 +25,7 @@ class Config(object):
         self.keep_prob = 1.0 
         self.mode = 'online'
         self.feattype=feattype
-        if FLAGS.num_learners is not None:
+        if (FLAGS is not None) and (FLAGS.num_learners is not None):
             self.num_learners = FLAGS.num_learners
         else:
             self.num_learners = 50
@@ -50,7 +50,7 @@ class Config(object):
             Output: <True Label, 1>
         """
         
-        if FLAGS.local_hidden_size is not None:
+        if (FLAGS is not None) and (FLAGS.local_hidden_size is not None):
             self.local_hidden_size = FLAGS.local_hidden_size
         else:
             self.local_hidden_size = 50

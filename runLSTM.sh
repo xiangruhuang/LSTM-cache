@@ -1,5 +1,15 @@
 #!/bin/bash
 num_learners=50
-local_hidden_size=$2
-echo "running omnetpp feat5 with num_steps = ${i}, device=/gpu:${1}, num_learners=${num_learners}, local_hidden_size=${local_hidden_size}" >> global_log
-make device=${1} num_learners=${num_learners} num_steps=100 local_hidden_size=$2
+local_hidden_size=$1
+num_steps=100
+data=omnetpp
+model_no=`bash next_model.sh ${data}`
+model_dir=${data}.model${model_no}
+device=0
+
+mkdir -p ${model_dir}
+echo "running omnetpp feat5 with num_steps = ${num_steps}, device=/gpu:0, num_learners=${num_learners}, local_hidden_size=${local_hidden_size}" >> global_log
+
+cat script_template | sed "s/LOGNAME/${model_dir}\/log/" | sed "s/JOBNAME/${data}${model_no}_lhs${local_hidden_size}_nl${num_learners}_ns${num_steps}/" > ${model_dir}/script
+echo "make num_learners=${num_learners} num_steps=${num_steps} local_hidden_size=${local_hidden_size} model_dir=${model_dir} device=${device}" >> ${model_dir}/script
+sbatch ${model_dir}/script

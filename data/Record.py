@@ -1,7 +1,7 @@
 import sys
 import json
 import numpy
-sys.path.append('/home/xiangru/Projects/LSTM-cache/')
+sys.path.append('/home/04603/xrhuang/Projects/LSTM-cache/')
 from Config import Config
 
 class Sample(object):

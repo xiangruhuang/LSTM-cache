@@ -5,7 +5,7 @@ import collections
 import os
 
 import tensorflow as tf
-from tensorflow.python.ops import rnn, rnn_cell
+from tensorflow.python.ops import rnn
 import numpy
 
 #def read_numbers(filename):

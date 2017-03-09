@@ -343,6 +343,7 @@ def main(_):
         if FLAGS.is_training:
             lc = tf.train.latest_checkpoint(model_dir+'/')
             if lc is not None:
+		print("restoring model from "+model_dir+'/')
                 saver.restore(sess, lc)
         else:
             lc = tf.train.latest_checkpoint(model_dir+'/')
@@ -667,8 +668,8 @@ def main(_):
 #                #coord.request_stop()
 #                #coord.join(threads)
 
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]=str(FLAGS.device)
+#os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
+#os.environ["CUDA_VISIBLE_DEVICES"]=str(FLAGS.device)
 
 if __name__ == "__main__":
     tf.app.run()

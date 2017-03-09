@@ -1,4 +1,4 @@
-datasets=soplex
+datasets=omnetpp
 feature=feat5
 
 all:
