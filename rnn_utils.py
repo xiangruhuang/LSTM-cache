@@ -42,47 +42,22 @@ def switched_batched_feed_forward(cells, inputs, switch, states):
     for b in range(batch_size):
         pred_fn_pairs_outputs = []
         next_states_b = []
-        #vals = []
         
-        #for i in range(N):
-        #    """states[b][i] should be a tuple of size 1.
-        #        states_b_i[0] is a LSTMStateTuple of size 2.
-        #        (c, h) = states_b_i[0]. c and h both have size [1, hidden_size]
-        #    """
-        #    #states_in_tensor = tf.convert_to_tensor(states[b][i])
-        #    #vals_i = cells[i].feed_forward(inputs[i:i+1, :], state=states[b][i]
-        #    #    , output_dim=output_dim, activation=tf.sigmoid)
-        #    #vals.append(vals_i)
-        #    
-        #    next_states_b_i = tf.cond(switch[b, i]
-        #            , lambda : tf.convert_to_tensor(
-        #            cells[i].feed_forward(inputs[i:i+1, :], state=states[b][i]
-        #            , output_dim=output_dim, activation=tf.sigmoid)['states'])
-        #            , lambda: states_in_tensor)
-        #    with tf.get_default_graph().control_dependencies([next_states_b_i]):
-        #        next_states_b_i.set_shape(states_in_tensor.get_shape().as_list())
-        #        states_in_tuple = []
-        #        for l in range(next_states_b_i.get_shape().as_list()[0]):
-        #            lstm_state_i = next_states_b_i[l, :, :, :]
-        #            c = lstm_state_i[0, :, :]
-        #            h = lstm_state_i[1, :, :]
-        #            states_in_tuple.append(LSTMStateTuple(c, h))
-        #        gate = tf.add(gate, tf.constant(1))
-        #        next_states_b.append(tuple(states_in_tuple))
-        vals = tf.case([(switch[b, i]
-                , lambda i=i, b=b: cells[i].feed_forward(inputs[b:b+1, :], state=states[b][i]
-                , output_dim=output_dim, activation=tf.sigmoid
-                , flat=True)) for i in range(N)]
-                , default=lambda:nest.flatten(zero_output)+ nest.flatten(zero_state)
-                , exclusive = False)
+        vals = tf.case([(switch[b, i] , lambda i=i, b=b:
+            cells[i].feed_forward(inputs[b:b+1, :], state=states[b][i] ,
+                output_dim=output_dim, activation=tf.sigmoid , flat=True)) for i
+            in range(N)] , default=lambda:nest.flatten(zero_output)+
+            nest.flatten(zero_state) , exclusive = False)
         output_b = vals[:len(flat_zero_output)]
         for structural, flat in zip(output_b, flat_zero_output):
             structural.set_shape(flat.get_shape())
-        output_b = nest.pack_sequence_as(structure=zero_output, flat_sequence=output_b)
+        output_b = nest.pack_sequence_as(structure=zero_output,
+            flat_sequence=output_b)
         state_b = vals[len(flat_zero_output):]
         for structural, flat in zip(state_b, flat_zero_state):
             structural.set_shape(flat.get_shape())
-        state_b = nest.pack_sequence_as(structure=states[b][i], flat_sequence=state_b)
+        state_b = nest.pack_sequence_as(structure=states[b][i],
+            flat_sequence=state_b)
         #print(output_b)
         #print(state_b)
         for i in range(N):
@@ -151,7 +126,8 @@ def cond_tuple(switch, iftrue, iffalse):
     flat_iftrue=nest.flatten(iftrue)
     flat_iffalse=nest.flatten(iffalse)
     nest.assert_same_structure(iftrue, iffalse)
-    flat_ans = [tf.cond(switch, lambda:flat_iftrue[i], lambda:flat_iffalse[i]) for i in range(len(flat_iftrue))]
+    flat_ans = [tf.cond(switch, lambda:flat_iftrue[i], lambda:flat_iffalse[i])
+        for i in range(len(flat_iftrue))]
     ans = nest.pack_sequence_as(structure=iftrue, flat_sequence=flat_ans)
     return ans
 

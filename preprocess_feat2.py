@@ -1,7 +1,6 @@
 import sys
 import json
 import numpy
-sys.path.append('/home/xiangru/Projects/LSTM-cache/')
 from Config import *
 
 class Record(object):

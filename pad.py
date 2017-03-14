@@ -1,6 +1,6 @@
 import sys
 import os
-sys.path.append('/home/xiangru/Projects/LSTM-cache/')
+sys.path.append('/work/04603/xrhuang/maverick/Projects/LSTM-cache/')
 from Config import *
 
 config = Config()

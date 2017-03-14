@@ -54,7 +54,8 @@ class Config(object):
             self.local_hidden_size = FLAGS.local_hidden_size
         else:
             self.local_hidden_size = 50
-        self.local_dims = [self.context_dims[-1] + 1 + self.history_len, self.local_hidden_size, 1]
+        self.local_dims = [self.context_dims[-1] + 1 + self.history_len,
+            self.local_hidden_size, 1]
         self.local_params = LSTMModel.Params(dims=self.local_dims
             , num_steps=self.num_steps, batch_size=self.batch_size
             , name='local')

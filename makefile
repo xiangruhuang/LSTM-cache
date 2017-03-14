@@ -2,7 +2,7 @@
 #data=data/gcc/gcc
 #data=data/gaussian/gaussian
 
-datadir=/home/04603/xrhuang/Projects/LSTM-cache/data/
+datadir=/work/04603/xrhuang/maverick/Projects/LSTM-cache/data/
 #name=$(firstword $(subst ., , $(notdir $(data))))
 #num_instr=
 gcc.num_instr=3280

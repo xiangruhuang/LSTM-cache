@@ -1,15 +1,16 @@
 import sys
 import json
 import numpy
-sys.path.append('/home/04603/xrhuang/Projects/LSTM-cache/')
+sys.path.append('/work/04603/xrhuang/maverick/Projects/LSTM-cache/')
 from Config import Config
 
 class Sample(object):
-    def __init__(self, instr_id, time_stamp, feature, y, wakeup_id=-1):
+    def __init__(self, instr_id, time_stamp, feature, y, hacc, wakeup_id=-1):
         self.instr_id = instr_id
         self.t = time_stamp
         self.feature = feature
         self.y = y
+        self.hacc = hacc
         self.wakeup_id = wakeup_id
 
     def get_baseline_prediction(self):
@@ -30,7 +31,7 @@ class Sample(object):
 
 class Record(object):
     last_instr = 0
-    def __init__(self, t, data, instr, prob, Y):
+    def __init__(self, t, data, instr, prob, Y, hacc):
         self.t = t
         self.data = int(data, 16)
 
@@ -44,8 +45,10 @@ class Record(object):
 
         self.prob = float(prob) if abs(float(prob) - 2.0) > 1e-3 else 0.5
         self.Y = int(Y)
+        self.hacc = float(hacc)
 
 class Records(object):
+
     def __init__(self, filename, feature_type):
         with open(filename, 'r') as fin:
             lines = fin.readlines()
@@ -55,7 +58,7 @@ class Records(object):
         instr_set = set([int(l.strip().split(' ')[2], 16) for l in lines])
         data_set = set([int(l.strip().split(' ')[1], 16) for l in lines])
         """data_addr, instr_addr, prob, truelabel"""
-        samples = [l.strip().split(' ')[1:5] for l in lines] # skip some lines
+        samples = [l.strip().split(' ')[1:6] for l in lines] # skip some lines
 
         self.T = config.history_len
         #self.code_history_len = config.code_history_len
@@ -116,7 +119,8 @@ class Records(object):
         return feature, r_t.Y
 
     def add_sample(self, t, sample):
-        r = Record(t, data=sample[0], instr=sample[1], prob=sample[2], Y=sample[3])
+        r = Record(t, data=sample[0], instr=sample[1], prob=sample[2],
+            Y=sample[3], hacc=sample[4])
         self.records.append(r)
         
         self.data_hist[r.data].append(r)
@@ -137,19 +141,17 @@ class Records(object):
             #self.unknown[last_record.instr] -= 1
         feature_t, Y_t = self.get_feature(r.instr)
         #assert(len(feature_t) == self.T+2)
-        self.samples.append(Sample(self.instr_dict[r.instr], r.t, feature_t, Y_t))
+        self.samples.append(Sample(self.instr_dict[r.instr], r.t, feature_t,
+            Y_t, r.hacc))
         self.samples[-1].wakeup_id = wakeup_id
 
     def dump(self, filename):
-        #json.dump(self.samples, open(filename+'.'+'all', 'w'))
         with open(filename+'.'+'all', 'w') as fout_all:
             for sample in self.samples:
-                with open(filename+'.'+str(sample.instr_id), 'a') as fout:
-                    fout.write(str(sample.t)+': '+str(sample.instr_id)+' ')
-                    fout_all.write(str(sample.instr_id)+' '+str(sample.wakeup_id)+' ')
-                    for f in sample.feature:
-                        fout.write(str(f)+' ')
-                        fout_all.write(str(f)+' ')
-                    fout.write(str(sample.y) + '\n')
-                    fout_all.write(str(sample.y) + '\n')
+                fout_all.write(str(sample.instr_id)+' '+str(sample.wakeup_id)+' ')
+                for f in sample.feature:
+                    fout_all.write(str(f)+' ')
+                fout_all.write(str(sample.y)+ ' ')
+                fout_all.write(str(sample.hacc) + '\n')
+
 
