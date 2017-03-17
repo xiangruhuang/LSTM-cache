@@ -1,7 +1,7 @@
-import sys
+import sys, os
+sys.path.append(os.path.join(sys.path[0],'../'))
 import json
 import numpy
-sys.path.append('/work/04603/xrhuang/maverick/Projects/LSTM-cache/')
 from Config import Config
 
 class Sample(object):

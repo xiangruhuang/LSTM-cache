@@ -7,7 +7,7 @@ test_split=1
 split=${train_split}:${test_split}
 data=omnetpp
 model_no=`bash next_model.sh ${data}`
-model_dir=${data}.model${model_no}
+model_dir=${data}/${model_no}
 context_output_dim=20
 device=0
 

@@ -15,11 +15,10 @@ from tensorflow.contrib.rnn.python.ops.core_rnn_cell_impl import LSTMStateTuple
 from rnn_utils import *
 
 from flags import *
-#from Reader import *
 from LSTMModel import *
 from Config import *
 import time
-sys.path.append('./data/')
+sys.path.append(os.path.join(sys.path[0], 'data'))
 from Record import * 
 
 
