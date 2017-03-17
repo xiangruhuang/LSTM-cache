@@ -5,6 +5,8 @@ from __future__ import print_function
 import collections
 import os
 
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"]="2"
 
 import sys
 
@@ -197,8 +199,73 @@ def get_ups_and_downs(instr_ids, label_batch, condition_batch, pred_batch):
                     downs[i] += 1.0
     return ups, downs
 
+def get_artificial_batch(samples, batch_size, num_steps, instr_ids, part, split):
+    batch_len = batch_size*num_steps
+    l = len(samples)
+    upper = l//batch_len
+    mid = get_split(upper, split)
+    if part == 'train':
+        start = numpy.random.randint(0, mid)*batch_len
+    elif part == 'test':
+        start = numpy.random.randint(mid, upper)*batch_len
+    else:
+        raise(ValueError("part must be either 'train' or 'test'"))
+    end = start + batch_len
+
+    def deform(f):
+        f[0] = numpy.random.randint(0, 2)
+        f[1] = numpy.random.randn()
+        f[2:] = numpy.random.randn(len(f)-2)
+        return f
+
+    subsamples = samples[start:end]
+    features = [deform(sample.feature) for sample in subsamples]
+    labels = [[1] if feature[1] >= 0.5 else [0] for feature in features]
+    #baseline_predictions = []
+    #for sample in subsamples:
+    #    if sample.feature[1] < 0.5:
+    #        baseline_predictions.append([0])
+    #    else:
+    #        baseline_predictions.append([1])
+    conditions = []
+    for ss, sample in enumerate(subsamples):
+        idx = 0
+        conditions.append([bool(ii == idx) for ii in range(len(instr_ids))])
+    
+    baseline_ups = [0.0 for i in range(len(instr_ids))]
+    baseline_downs = [0.0 for i in range(len(instr_ids))]
+    for i, id_subset in enumerate(instr_ids):
+        for s, sample in enumerate(subsamples):
+            if conditions[s][i]:
+                baseline_downs[i] += 1.0
+                pred = 0
+                if features[s][1] >= 0.5:
+                    pred = 1
+                assert pred==labels[s][0]
+                if pred == labels[s][0]:
+                    baseline_ups[i] += 1.0
+    
+    hawkeye_ups = baseline_ups
+    hawkeye_downs = baseline_downs
+
+    """feature has shape [batch_size*num_steps, input_dim]"""
+    """feature_batch has shape [num_steps, batch_size, input_dim]"""
+    feature_batch = numpy.transpose(numpy.array_split(features, batch_size),
+        [1,0,2])
+    """label_batch has shape [num_steps, batch_size, output_dim]"""
+    label_batch = numpy.transpose(numpy.array_split(labels, batch_size),
+        [1,0,2])
+    """condition_batch has shape [num_steps, batch_size, len(instr_ids)]"""
+    condition_batch = numpy.transpose( numpy.array_split(conditions,
+        batch_size), [1,0,2])
+    #print('feature batch has shape %s', feature_batch.shape)
+    #print('label   batch has shape %s', label_batch.shape)
+    #print('condition batch has shape %s', condition_batch.shape)
+    return feature_batch, label_batch, condition_batch, baseline_ups, \
+        baseline_downs, hawkeye_ups, hawkeye_downs 
+
 def run_batch(config, num_batches, name, global_features, labels, conditions,\
-    samples, ids, sess, evals, split, num_prints=None):
+    samples, ids, sess, evals, split, reader, num_prints=None):
 
     if (num_prints is None) or (num_prints == 0):
         print_period = num_batches+1
@@ -220,9 +287,15 @@ def run_batch(config, num_batches, name, global_features, labels, conditions,\
 
     for Iter in range(num_batches):
         """output has shapes [num_steps, batch_size, XXX]"""
-        global_feature_data, label_data, condition_data, \
+        if reader=='random':
+            global_feature_data, label_data, condition_data, \
             baseline_up, baseline_down, hawkeye_up, hawkeye_down = \
             get_random_batch(samples, config.batch_size,
+                config.num_steps, ids, name, split)
+        else:
+            global_feature_data, label_data, condition_data, \
+            baseline_up, baseline_down, hawkeye_up, hawkeye_down = \
+            get_artificial_batch(samples, config.batch_size,
                 config.num_steps, ids, name, split)
         
         values = sess.run(evals, feed_dict={ global_features:global_feature_data
@@ -262,6 +335,11 @@ def run_batch(config, num_batches, name, global_features, labels, conditions,\
     print('%sing:\tnum_samples=%d, lstm acc=%f' 
             % (name, num_samples, lstm_acc), end="")
     print(', hawkeye acc=%f, baseline acc=%f' % (hawkeye_acc, baseline_acc))
+    print('baseline\t\thawkeye\t\tlstm')
+    for i in range(config.num_learners):
+        print('%.5f\t%.5f\t%.5f' % (baseline_ups[i]/baseline_downs[i],
+            hawkeye_ups[i]/hawkeye_downs[i],
+            lstm_ups[i]/lstm_downs[i]))
 
 
 def main(_):
@@ -472,27 +550,62 @@ def main(_):
         num_batches = len(samples)//(config.batch_size*config.num_steps)
         num_test_batches = (num_batches - get_split(num_batches,
             FLAGS.split))//config.max_epoch*4
-        num_train_batches = get_split(num_batches, FLAGS.split)//config.max_epoch
+        num_train_batches = get_split(num_batches,
+                FLAGS.split)//config.max_epoch
         print('starting with epoch %d ....' % current_epoch)
+        
+        """copy weights to the other lstm"""
+        with tf.variable_scope('') as scope:
+            scope.reuse_variables()
+            w0 = tf.get_variable('local0'+'/inputs_'+
+                    str(config.local_params.input_dim)
+                    +'/multi_rnn_cell/cell_0/basic_lstm_cell/weights')
+            b0 = tf.get_variable('local0'+'/inputs_'+
+                    str(config.local_params.input_dim)
+                    +'/multi_rnn_cell/cell_0/basic_lstm_cell/biases')
+            assign_ops = []
+            for i in range(1, config.num_learners):
+                w = tf.get_variable('local'+str(i)+'/inputs_'+
+                        str(config.local_params.input_dim)
+                        +'/multi_rnn_cell/cell_0/basic_lstm_cell/weights')
+                b = tf.get_variable('local'+str(i)+'/inputs_'+
+                        str(config.local_params.input_dim)
+                        +'/multi_rnn_cell/cell_0/basic_lstm_cell/biases')
+                assign_ops.append(w.assign(w0))
+                assign_ops.append(b.assign(b0))
+    
+        if current_epoch == -1:
+            for pretrain in range(5):
+                print('pretraining %d' % pretrain)
+                """pretraining"""
+                run_batch(config, num_train_batches, 'train', global_features, labels,
+                        conditions, samples, ids, sess, train_evals, FLAGS.split,
+                        'artificial', num_prints=100)
+
+                sess.run(assign_ops)
+                
+                """testing"""
+                run_batch(config, num_test_batches, 'test', global_features, labels,
+                        conditions, samples, ids, sess, test_evals, FLAGS.split,
+                        'random', num_prints=0)
+
         for e in range(current_epoch+1, current_epoch+config.max_epoch):
             print('epoch=%d, #train=%d, #test=%d...' % (e, num_train_batches,
                 num_test_batches))
             """training"""
-            run_batch(config, num_train_batches, 'train', global_features,
-                labels, conditions, samples, ids, sess, train_evals, FLAGS.split,
-                num_prints=10)
+            run_batch(config, num_train_batches, 'train', global_features, labels,
+                    conditions, samples, ids, sess, train_evals, FLAGS.split,
+                    'random', num_prints=100)
 
             saver.save(sess, model_dir+'/ckpt', global_step=e)
             
             """testing"""
             run_batch(config, num_test_batches, 'test', global_features, labels,
-                conditions, samples, ids, sess, test_evals, FLAGS.split,
-                num_prints=0)
+                    conditions, samples, ids, sess, test_evals, FLAGS.split,
+                    'random', num_prints=0)
             
         coord.request_stop()
         coord.join(threads)
-
-
 
 if __name__ == "__main__":
     tf.app.run()
