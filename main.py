@@ -98,8 +98,11 @@ class Log(object):
         else:
             return self.train_up / self.train_down
 
-def get_split(num_batches):
-    mid = num_batches//4*3
+def get_split(num_batches, splits):
+    tokens = splits.split(':')
+    train = int(tokens[0])
+    test = int(tokens[1])
+    mid = num_batches//(train+test)*train
     return mid
 
 """Generate random batch from data.
@@ -117,11 +120,11 @@ Outputs:
 """
 """output has shape [num_steps, batch_size, input_dim]"""
 
-def get_random_batch(samples, batch_size, num_steps, instr_ids, part):
+def get_random_batch(samples, batch_size, num_steps, instr_ids, part, split):
     batch_len = batch_size*num_steps
     l = len(samples)
     upper = l//batch_len
-    mid = get_split(upper)
+    mid = get_split(upper, split)
     if part == 'train':
         start = numpy.random.randint(0, mid)*batch_len
     elif part == 'test':
@@ -132,22 +135,34 @@ def get_random_batch(samples, batch_size, num_steps, instr_ids, part):
     subsamples = samples[start:end]
     features = [sample.feature for sample in subsamples]
     labels = [[sample.y] for sample in subsamples]
-    baseline_predictions = []
-    for sample in subsamples:
-        if sample.feature[1] < 0.5:
-            baseline_predictions.append([0])
-        else:
-            baseline_predictions.append([1])
-    baseline_acc = 1.0 - numpy.mean( abs(numpy.asarray( labels )-numpy.asarray(
-        baseline_predictions)))
-    ups = [0.0 for i in range(len(instr_ids))]
-    downs = [0.0 for i in range(len(instr_ids))]
+    #baseline_predictions = []
+    #for sample in subsamples:
+    #    if sample.feature[1] < 0.5:
+    #        baseline_predictions.append([0])
+    #    else:
+    #        baseline_predictions.append([1])
+    
+    baseline_ups = [0.0 for i in range(len(instr_ids))]
+    baseline_downs = [0.0 for i in range(len(instr_ids))]
     for i, id_subset in enumerate(instr_ids):
         for s, sample in enumerate(subsamples):
             if sample.instr_id in id_subset:
-                downs[i] += 1.0
-                if baseline_predictions[s][0] == sample.y:
-                    ups[i] += 1.0
+                baseline_downs[i] += 1.0
+                pred = 0
+                if sample.feature[1] >= 0.5:
+                    pred = 1
+                if pred == sample.y:
+                    baseline_ups[i] += 1.0
+    
+    hawkeye_ups = [0.0 for i in range(len(instr_ids))]
+    hawkeye_downs = [0.0 for i in range(len(instr_ids))]
+    for i, id_subset in enumerate(instr_ids):
+        for s, sample in enumerate(subsamples):
+            if sample.instr_id in id_subset:
+                hawkeye_downs[i] += 1.0
+                if int(sample.hacc) == 1:
+                    hawkeye_ups[i] += 1.0
+
     conditions = [[bool(sample.instr_id in id_subset) for id_subset in
         instr_ids] for sample in subsamples]
     #print('loads=', [numpy.mean(
@@ -166,7 +181,8 @@ def get_random_batch(samples, batch_size, num_steps, instr_ids, part):
     #print('feature batch has shape %s', feature_batch.shape)
     #print('label   batch has shape %s', label_batch.shape)
     #print('condition batch has shape %s', condition_batch.shape)
-    return feature_batch, label_batch, condition_batch, baseline_acc, ups, downs
+    return feature_batch, label_batch, condition_batch, baseline_ups, \
+        baseline_downs, hawkeye_ups, hawkeye_downs
 
 def get_ups_and_downs(instr_ids, label_batch, condition_batch, pred_batch):
     ups = [0.0 for ids in range(len(instr_ids))]
@@ -181,6 +197,73 @@ def get_ups_and_downs(instr_ids, label_batch, condition_batch, pred_batch):
                     ups[i] += subacc
                     downs[i] += 1.0
     return ups, downs
+
+def run_batch(config, num_batches, name, global_features, labels, conditions,\
+    samples, ids, sess, evals, split, num_prints=None):
+
+    if (num_prints is None) or (num_prints == 0):
+        print_period = num_batches+1
+    else:
+        print_period = num_batches//num_prints
+
+    st = time.time()
+    baseline_ups = numpy.asarray([0.0 for i in
+        range(config.num_learners)])
+    baseline_downs = numpy.asarray([0.0 for i in
+        range(config.num_learners)])
+    hawkeye_ups = numpy.asarray([0.0 for i in
+        range(config.num_learners)])
+    hawkeye_downs = numpy.asarray([0.0 for i in
+        range(config.num_learners)])
+    lstm_ups = numpy.asarray([0.0 for i in range(config.num_learners)])
+    lstm_downs = numpy.asarray([0.0 for i in
+        range(config.num_learners)])
+
+    for Iter in range(num_batches):
+        """output has shapes [num_steps, batch_size, XXX]"""
+        global_feature_data, label_data, condition_data, \
+            baseline_up, baseline_down, hawkeye_up, hawkeye_down = \
+            get_random_batch(samples, config.batch_size,
+                config.num_steps, ids, name, split)
+        
+        values = sess.run(evals, feed_dict={ global_features:global_feature_data
+            , labels:label_data, conditions:condition_data})
+        baseline_ups += numpy.asarray(baseline_up)
+        baseline_downs += numpy.asarray(baseline_down)
+        baseline_acc = float(baseline_ups.sum())/float(baseline_downs.sum())
+
+        hawkeye_ups += numpy.asarray(hawkeye_up)
+        hawkeye_downs += numpy.asarray(hawkeye_down)
+        hawkeye_acc = float(hawkeye_ups.sum())/float(hawkeye_downs.sum())
+
+        lstm_up, lstm_down = get_ups_and_downs(ids, label_data,
+                condition_data, values['pred'])
+        lstm_ups += numpy.asarray(lstm_up)
+        lstm_downs += numpy.asarray(lstm_down)
+        lstm_acc = float(lstm_ups.sum())/float(lstm_downs.sum())
+
+        if (Iter+1) % print_period == 0:
+            ed = time.time()
+            num_samples = (Iter+1)*config.num_steps * config.batch_size
+            print('%sing:\titer=%d, num_samples=%d, lstm acc=%f, ' %  \
+                (name, Iter, num_samples, lstm_acc), end="")
+            print('baseline acc=%f, hawkeye acc=%f, elapsed time=%f' % \
+                (baseline_acc, hawkeye_acc, (ed-st)))
+            print('baseline\t\thawkeye\t\tlstm')
+            for i in range(config.num_learners):
+                print('%.5f\t%.5f\t%.5f' % (baseline_ups[i]/baseline_downs[i],
+                    hawkeye_ups[i]/hawkeye_downs[i],
+                    lstm_ups[i]/lstm_downs[i]))
+            st = ed
+
+    lstm_acc = float(lstm_ups.sum())/float(lstm_downs.sum())
+    hawkeye_acc = float(hawkeye_ups.sum())/float(hawkeye_downs.sum())
+    baseline_acc = float(baseline_ups.sum())/float(baseline_downs.sum())
+    num_samples = num_batches * config.num_steps * config.batch_size
+    print('%sing:\tnum_samples=%d, lstm acc=%f' 
+            % (name, num_samples, lstm_acc), end="")
+    print(', hawkeye acc=%f, baseline acc=%f' % (hawkeye_acc, baseline_acc))
+
 
 def main(_):
     """Initialization"""
@@ -242,14 +325,16 @@ def main(_):
                 Hidden Layers: [30]
                 Output: <context_feature, [batch_size, 20]>
             """
-            context = LSTMModel(config.context_params)
+            if FLAGS.context_output_dim > 0:
+                context = LSTMModel(config.context_params)
+                context_state = context.initial_state(config.batch_size)
+            
             learners = [Learner(config.local_params)
                     for i in range(config.num_learners)]
             cells = [learner.lstm for learner in learners]
             states = [[learner.lstm.initial_state(1)
                     for learner in learners]
                     for b in range(config.batch_size)]
-            context_state = context.initial_state(config.batch_size)
             outputs = []
             
             #context_input = tf.unstack(global_features[:, :, 0:1])
@@ -262,19 +347,22 @@ def main(_):
             #        [config.batch_size, context.params.output_dim])
 
             for t in range(config.num_steps):
-                var_sizes = [numpy.product(list(map(int,
-                    v.get_shape())))*v.dtype.size for v in
-                    tf.global_variables()]
+                #var_sizes = [numpy.product(list(map(int,
+                #    v.get_shape())))*v.dtype.size for v in
+                #    tf.global_variables()]
                 print("time step %d:" % t)
-                global_feature_t = global_features[t, :, 0:1]
-                assert global_feature_t.get_shape().as_list() == \
-                [config.batch_size, config.context_params.input_dim]
-                context_feature, context_state = context.feed_forward(
-                        global_feature_t, state = context_state
-                        , output_dim=context.params.output_dim
-                        , activation=tf.sigmoid)
-                local_input = tf.concat([context_feature
-                        , global_features[t, :, 1:]], axis=1)
+                if FLAGS.context_output_dim==0:
+                    local_input = tf.concat([global_features[t, :, 1:]], axis=1)
+                else:
+                    global_feature_t = global_features[t, :, 0:1]
+                    assert global_feature_t.get_shape().as_list() == \
+                    [config.batch_size, config.context_params.input_dim]
+                    context_feature, context_state = context.feed_forward(
+                        global_feature_t, state = context_state ,
+                        output_dim=context.params.output_dim ,
+                        activation=tf.sigmoid)
+                    local_input = tf.concat([context_feature,
+                        global_features[t,:,1:]], axis=1)
                 assert local_input.get_shape().as_list()== [config.batch_size,
                     config.local_params.input_dim]
                 output_t, states = switched_batched_feed_forward(cells,
@@ -296,10 +384,8 @@ def main(_):
                 if grad is not None:
                     grad = tf.Print(grad, [grad], str(var.name))
             optimizer = optimizer.apply_gradients(grads_and_vars)
-            if FLAGS.is_training:
-                evals = {'optimizer':optimizer, 'acc':acc, 'pred':int_pred}
-            else:
-                evals = {'acc':acc, 'pred':int_pred}
+            train_evals = {'optimizer':optimizer, 'acc':acc, 'pred':int_pred}
+            test_evals = {'acc':acc, 'pred':int_pred}
             
             init = tf.global_variables_initializer()
             #print(global_vars)
@@ -316,32 +402,32 @@ def main(_):
             saver = tf.train.Saver(tf.trainable_variables())
             
         print([(v.name, v.get_shape()) for v in tf.trainable_variables()])
-        heuristic_init = []
-        with tf.variable_scope('') as scope:
-            scope.reuse_variables()
-            for i in range(config.num_learners):
-                w = tf.get_variable('local'+str(i)+'/inputs_'+
-                    str(config.local_params.input_dim)
-                    +'/multi_rnn_cell/cell_0/basic_lstm_cell/weights')
-                x_size = config.local_params.input_dim
-                h_size = config.local_params.hidden_sizes[0]
-                w_init = []
-                for x_i in range(x_size):
-                    w_i = []
-                    w_i.append(tf.constant(0.0, shape=[1, h_size]))
-                    w_i.append(tf.constant(0.0, shape=[1, h_size]))
-                    w_i.append(tf.constant(0.0, shape=[1, h_size]))
-                    if x_i == config.context_dims[-1]:
-                        w_i.append(tf.constant(1.0, shape=[1, h_size]))
-                    else:
-                        w_i.append(tf.constant(0.0, shape=[1, h_size]))
-                    w_i = tf.concat(w_i, 1)
-                    w_init.append(w_i)
+        #heuristic_init = []
+        #with tf.variable_scope('') as scope:
+        #    scope.reuse_variables()
+        #    for i in range(config.num_learners):
+        #        w = tf.get_variable('local'+str(i)+'/inputs_'+
+        #            str(config.local_params.input_dim)
+        #            +'/multi_rnn_cell/cell_0/basic_lstm_cell/weights')
+        #        x_size = config.local_params.input_dim
+        #        h_size = config.local_params.hidden_sizes[0]
+        #        w_init = []
+        #        for x_i in range(x_size):
+        #            w_i = []
+        #            w_i.append(tf.constant(0.0, shape=[1, h_size]))
+        #            w_i.append(tf.constant(0.0, shape=[1, h_size]))
+        #            w_i.append(tf.constant(0.0, shape=[1, h_size]))
+        #            if x_i == config.context_dims[-1]:
+        #                w_i.append(tf.constant(1.0, shape=[1, h_size]))
+        #            else:
+        #                w_i.append(tf.constant(0.0, shape=[1, h_size]))
+        #            w_i = tf.concat(w_i, 1)
+        #            w_init.append(w_i)
 
-                w_init.append(tf.constant(0.0, shape=[h_size, h_size*4]))
+        #        w_init.append(tf.constant(0.0, shape=[h_size, h_size*4]))
 
-                w_init = tf.concat(w_init, 0)
-                heuristic_init.append(w.assign(w_init))
+        #        w_init = tf.concat(w_init, 0)
+        #        heuristic_init.append(w.assign(w_init))
         
         print("Reading Data...")
         with tf.name_scope('readers'):
@@ -360,7 +446,7 @@ def main(_):
     configProto.gpu_options.allow_growth=True
     with tf.Session(graph=C, config=configProto) as sess:
         sess.run(init)
-        sess.run(heuristic_init)
+        #sess.run(heuristic_init)
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         ids = [[] for i in range(config.num_learners)]
@@ -372,104 +458,37 @@ def main(_):
         print(ids)
         
         acc_sum = 0.0
+        current_epoch = -1
         if FLAGS.is_training:
             lc = tf.train.latest_checkpoint(model_dir+'/')
             if lc is not None:
                 print("restoring model from "+model_dir+'/')
                 saver.restore(sess, lc)
+                current_epoch = int(str(lc).split('ckpt-')[-1])
         else:
             lc = tf.train.latest_checkpoint(model_dir+'/')
             assert not (lc is None) 
             saver.restore(sess, lc)
 
         num_batches = len(samples)//(config.batch_size*config.num_steps)
-        num_train_batches = get_split(num_batches//config.max_epoch)
-        num_test_batches = num_batches//config.max_epoch - num_train_batches
-        for e in range(config.max_epoch):
+        num_test_batches = (num_batches - get_split(num_batches,
+            FLAGS.split))//config.max_epoch*4
+        num_train_batches = get_split(num_batches, FLAGS.split)//config.max_epoch
+        print('starting with epoch %d ....' % current_epoch)
+        for e in range(current_epoch+1, current_epoch+config.max_epoch):
             print('epoch=%d, #train=%d, #test=%d...' % (e, num_train_batches,
                 num_test_batches))
-            print('training...', end="")
             """training"""
-            baseline_train_acc = 0.0
-            train_acc = 0.0
-            st = time.time()
-            baseline_ups = numpy.asarray([0.0 for i in
-                range(config.num_learners)])
-            baseline_downs = numpy.asarray([0.0 for i in
-                range(config.num_learners)])
-            lstm_ups = numpy.asarray([0.0 for i in range(config.num_learners)])
-            lstm_downs = numpy.asarray([0.0 for i in
-                range(config.num_learners)])
-            for train_iter in range(num_train_batches):
-                """output has shapes [num_steps, batch_size, XXX]"""
-                global_feature_data, label_data, condition_data, baseline_acc, \
-                        ups, downs = get_random_batch(samples,
-                            config.batch_size, config.num_steps, ids, 'train')
-                
-                values = sess.run(evals, feed_dict={
-                    global_features:global_feature_data , labels:label_data,
-                    conditions:condition_data})
-                train_acc += values['acc']
-                baseline_ups += numpy.asarray(ups)
-                baseline_downs += numpy.asarray(downs)
-                lstm_up, lstm_down = get_ups_and_downs(ids, label_data,
-                        condition_data, values['pred'])
-                lstm_ups += numpy.asarray(lstm_up)
-                lstm_downs += numpy.asarray(lstm_down)
-                baseline_train_acc += baseline_acc
-                if (train_iter+1) % 10 == 0:
-                    ed = time.time()
-                    print('\titer=%d, train acc=%f, baseline train acc=%f,'
-                        'elapsed time=%f' % (train_iter,
-                            train_acc/float(train_iter+1),
-                            baseline_train_acc/float(train_iter+1), (ed-st)))
-                    print('train baseline\tlstm')
-                    for i in range(config.num_learners):
-                        print('%f\t%f' % (baseline_ups[i]/baseline_downs[i],
-                            lstm_ups[i]/lstm_downs[i])) 
-                    st = ed
+            run_batch(config, num_train_batches, 'train', global_features,
+                labels, conditions, samples, ids, sess, train_evals, FLAGS.split,
+                num_prints=10)
 
-            print('train acc=%f' % (train_acc/float(num_train_batches)))
             saver.save(sess, model_dir+'/ckpt', global_step=e)
+            
             """testing"""
-            print('testing...', end="")
-            test_acc = 0.0
-            baseline_test_acc = 0.0
-            st = time.time()
-            up_total = numpy.asarray([0.0 for i in range(config.num_learners)])
-            down_total = numpy.asarray([0.0 for i in
-                range(config.num_learners)])
-            lstm_ups = numpy.asarray([0.0 for i in range(config.num_learners)])
-            lstm_downs = numpy.asarray([0.0 for i in
-                range(config.num_learners)])
-            for test_iter in range(num_test_batches):
-                global_feature_data, label_data , condition_data, baseline_acc,
-                ups, downs= get_random_batch(samples, config.batch_size ,
-                        config.num_steps, ids, 'test')
-                test_acc_t, pred_t = sess.run([evals['acc'], evals['pred']],
-                        feed_dict={ global_features:global_feature_data ,
-                            labels:label_data, conditions:condition_data})
-                test_acc += test_acc_t
-                baseline_test_acc += baseline_acc
-                up_total += numpy.asarray(ups)
-                down_total += numpy.asarray(downs)
-                lstm_up, lstm_down = get_ups_and_downs(ids, label_data,
-                    condition_data, pred_t)
-                lstm_ups += numpy.asarray(lstm_up)
-                lstm_downs += numpy.asarray(lstm_down)
-                if (test_iter+1) % 10 == 0:
-                    ed = time.time()
-                    print('\titer=%d, test acc=%f, baseline test acc=%f,'
-                        'elapsed time=%f' % (test_iter,
-                            test_acc/float(test_iter+1),
-                            baseline_test_acc/float(test_iter+1), (ed-st)))
-
-                    print('test baseline\tlstm')
-                    for i in range(config.num_learners):
-                        print('%f\t%f' % (baseline_ups[i]/baseline_downs[i],
-                            lstm_ups[i]/lstm_downs[i])) 
-                    st = ed
-            print('test acc=%f' % (test_acc/float(num_test_batches)))
+            run_batch(config, num_test_batches, 'test', global_features, labels,
+                conditions, samples, ids, sess, test_evals, FLAGS.split,
+                num_prints=0)
             
         coord.request_stop()
         coord.join(threads)

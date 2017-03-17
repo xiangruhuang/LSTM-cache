@@ -25,9 +25,10 @@ class Sample(object):
         tokens = line.strip().split(' ')
         instr_id = int(tokens[0])
         wakeup_id = int(tokens[1])
-        feature = [float(t) for t in tokens[2:-1]]
-        y = int(tokens[-1])
-        return cls(instr_id, time_stamp, feature, y, wakeup_id)
+        feature = [float(t) for t in tokens[2:-2]]
+        y = int(tokens[-2])
+        hacc = float(tokens[-1])
+        return cls(instr_id, time_stamp, feature, y, hacc, wakeup_id)
 
 class Record(object):
     last_instr = 0
@@ -73,7 +74,8 @@ class Records(object):
         self.total = 0
         self.feature = {i:[] for i in instr_set}
         self.dist_list = {i:[] for i in instr_set}
-        self.pos = [] # pos[t] = position of records[t] in instr_hist[records[t].instr]
+        """pos[t] = position of records[t] in instr_hist[records[t].instr]"""
+        self.pos = [] 
         self.unknown = {i:0 for i in instr_set}
         self.samples = []
         #self.context = [0]*self.code_history_len

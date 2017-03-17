@@ -16,6 +16,8 @@ num_steps=N/A
 history_len=10
 local_hidden_size=50
 model_dir=NA
+split=NA
+context_output_dim=20
 
 all: omnetpp.train
 
@@ -24,7 +26,7 @@ all: omnetpp.train
 	$(eval data = $(datadir)/$(b).$(feat))
 	echo dataset=$b feature type=$(feat)
 	$(eval num_instr = $($(b).num_instr))
-	((stdbuf -oL python main.py --data_path=$(data) --num_instr=$(num_instr) --is_training=True --model_dir=$(model_dir) --device=$(device) --history_len=$(history_len) --num_steps=$(num_steps) --num_learners=$(num_learners) --local_hidden_size=$(local_hidden_size) ) 2>&1) >> $(model_dir)/log
+	((stdbuf -oL python main.py --data_path=$(data) --num_instr=$(num_instr) --is_training=True --model_dir=$(model_dir) --device=$(device) --history_len=$(history_len) --num_steps=$(num_steps) --num_learners=$(num_learners) --local_hidden_size=$(local_hidden_size) --split=$(split) --context_output_dim=$(context_output_dim) ) 2>&1) >> $(model_dir)/log
 	#python main.py --data_path=$(data) --num_instr=$(num_instr) --is_training=True --model_dir=$(model_dir) --device=$(device) --history_len=$(history_len) --num_steps=$(num_steps) --num_learners=$(num_learners) --local_hidden_size=$(local_hidden_size)
 
 #%.test: 
@@ -42,3 +44,5 @@ all: omnetpp.train
 #	$(eval data = data/dnn_ordered_traces/$(b)/$(b).$(feat))
 #	echo dataset=$b feature type=$(feat)
 #	python test_batch.py --data_path=./$(data) --model_path=$(model) --is_training=False
+#
+	

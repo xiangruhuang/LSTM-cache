@@ -38,7 +38,7 @@ class Config(object):
             Hidden Layers: [30]
             Output: <context_feature, 20>
         """
-        self.context_dims = [1, 30, 20]
+        self.context_dims = [1, 30, FLAGS.context_output_dim]
         self.context_params = LSTMModel.Params(dims=self.context_dims
             , num_steps=self.num_steps, batch_size=self.batch_size
             , name='context')
@@ -56,9 +56,8 @@ class Config(object):
             self.local_hidden_size = 50
         self.local_dims = [self.context_dims[-1] + 1 + self.history_len,
             self.local_hidden_size, 1]
-        self.local_params = LSTMModel.Params(dims=self.local_dims
-            , num_steps=self.num_steps, batch_size=self.batch_size
-            , name='local')
+        self.local_params = LSTMModel.Params(dims=self.local_dims,
+            num_steps=self.num_steps, batch_size=self.batch_size, name='local')
 
     def to_string(self):
         s = 'Config:'
