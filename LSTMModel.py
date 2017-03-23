@@ -1,8 +1,10 @@
-from __future__ import print_function
-from __future__ import division
+#from __future__ import print_function
+#from __future__ import division
 
-import tensorflow as tf
-import numpy
+from utils import *
+
+#import tensorflow as tf
+#import numpy
 from tensorflow.python.util import nest
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops

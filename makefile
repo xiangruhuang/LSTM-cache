@@ -4,14 +4,15 @@ soplex.num_instr=2348
 omnetpp.num_instr=1498
 mix.num_instr=0
 feat=feat5
-device=0
-num_learners=50
-num_steps=100
+device=1 # 1 or 2
+num_learners=10
+num_steps=1
 history_len=10
 local_hidden_size=50
-model_dir=omnetpp/2
+model_dir=omnetpp/4
 split=3:1
 context_output_dim=20
+capacity=100
 
 all: omnetpp.train
 
@@ -20,6 +21,8 @@ all: omnetpp.train
 	$(eval data = $(datadir)/$(b).$(feat))
 	echo dataset=$b feature type=$(feat)
 	$(eval num_instr = $($(b).num_instr))
-	((stdbuf -oL python main.py --data_path=$(data) --num_instr=$(num_instr) --is_training=True --model_dir=$(model_dir) --device=$(device) --history_len=$(history_len) --num_steps=$(num_steps) --num_learners=$(num_learners) --local_hidden_size=$(local_hidden_size) --split=$(split) --context_output_dim=$(context_output_dim) ) 2>&1) >> $(model_dir)/log
-	#python main.py --data_path=$(data) --num_instr=$(num_instr) --is_training=True --model_dir=$(model_dir) --device=$(device) --history_len=$(history_len) --num_steps=$(num_steps) --num_learners=$(num_learners) --local_hidden_size=$(local_hidden_size) --split=$(split) --context_output_dim=$(context_output_dim)
+	((stdbuf -oL python main.py --data_path=$(data) --num_instr=$(num_instr) --is_training=True --model_dir=$(model_dir) --device=$(device) --history_len=$(history_len) --num_steps=$(num_steps) --num_learners=$(num_learners) --local_hidden_size=$(local_hidden_size) --split=$(split) --context_output_dim=$(context_output_dim) --capacity=$(capacity) ) 2>&1) >> $(model_dir)/log
+	#python main.py --data_path=$(data) --num_instr=$(num_instr) --is_training=True --model_dir=$(model_dir) --device=$(device) --history_len=$(history_len) --num_steps=$(num_steps) --num_learners=$(num_learners) --local_hidden_size=$(local_hidden_size) --split=$(split) --context_output_dim=$(context_output_dim) --capacity=$(capacity)
 
+start_tensorboard:
+	tensorboard --logdir=omnetpp:./omnetpp/1/tensorboard/,soplex:./soplex/1/tensorboard/ --reload_interval=30 

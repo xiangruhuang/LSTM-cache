@@ -1,12 +1,18 @@
-datasets=omnetpp
+datasets=soplex omnetpp tonto astar mcf
 feature=feat5
+
+data=
 
 all:
 	for data in $(datasets); do \
 		echo extracting $(feature) from $${data}; \
-		make $${data}/$${data}.$(feature)/$${data}.$(feature); \
+		make $${data}.$(feature)/instr.all.bin data=$${data}; \
 	done
 
-%.$(feature):
-	$(eval data := $(notdir $(basename $@)) )
+$(data).$(feature)/instr.all:
+	@echo constructing $(data).$(feature)/instr.all
 	python preprocess.py $(data) $(feature)
+
+$(data).$(feature)/instr.all.bin: $(data).$(feature)/instr.all
+	@echo constructing $(data).$(feature)/instr.all.bin
+	python convert_to_binary.py $(data).$(feature)/instr.all $(data).$(feature)/instr.all.bin

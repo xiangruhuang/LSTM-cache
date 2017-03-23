@@ -12,7 +12,10 @@ flags.DEFINE_string("log_dir", './tensorboard/log/', "where to output logs for\
     tensorboard")
 flags.DEFINE_string("model_dir", None, "where to output model and log")
 flags.DEFINE_string("split", None, "how to split train and test set")
+flags.DEFINE_string("mode", 'offline', "online or offline mode")
 flags.DEFINE_integer("num_learners", None, "num of learners")
+flags.DEFINE_integer("capacity", None, "capacity of online training set of each\
+        learner")
 flags.DEFINE_integer("num_steps", None, "num of time steps")
 flags.DEFINE_integer("history_len", None, "history length from OPTgen")
 flags.DEFINE_integer("local_hidden_size", None, "#neurons for local LSTM")

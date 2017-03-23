@@ -13,6 +13,10 @@ class Sample(object):
         self.hacc = hacc
         self.wakeup_id = wakeup_id
 
+    @classmethod
+    def sample_length(cls):
+        return 16
+
     def get_baseline_prediction(self):
         prob = float(self.feature[1])
         baseline_prediction = 1
@@ -28,6 +32,15 @@ class Sample(object):
         feature = [float(t) for t in tokens[2:-2]]
         y = int(tokens[-2])
         hacc = float(tokens[-1])
+        return cls(instr_id, time_stamp, feature, y, hacc, wakeup_id)
+
+    @classmethod
+    def from_array(cls, arr, time_stamp):
+        instr_id = int(arr[0])
+        wakeup_id = int(arr[1])
+        feature = [float(t) for t in arr[2:-2]]
+        y = int(arr[-2])
+        hacc = float(arr[-1])
         return cls(instr_id, time_stamp, feature, y, hacc, wakeup_id)
 
 class Record(object):

@@ -13,6 +13,12 @@ class Config(object):
             self.num_steps = FLAGS.num_steps
         else:
             self.num_steps = 100
+
+        if (FLAGS is not None):
+            self.data_path = FLAGS.data_path
+            self.num_instr = int(FLAGS.num_instr)
+            self.split = FLAGS.split
+        
         self.sample_dim = (3 + 1 + self.history_len + 1) * self.num_steps
         self.global_input_dim = 1 + 1 + self.history_len
 
@@ -20,28 +26,42 @@ class Config(object):
         #self.init_scale = 0.1
         self.learning_rate = 1e-3
         #self.lr_decay = 0.99
-        self.max_epoch = 25
+        self.max_epoch = 100
         self.max_batches = self.max_epoch*1000
         self.keep_prob = 1.0 
-        self.mode = 'online'
+
+        if (FLAGS is not None) and (FLAGS.mode is not None):
+            self.mode = FLAGS.mode
+
         self.feattype=feattype
         if (FLAGS is not None) and (FLAGS.num_learners is not None):
             self.num_learners = FLAGS.num_learners
         else:
             self.num_learners = 50
+        if (FLAGS is not None):
+            self.model_dir = FLAGS.model_dir
         
+        if (FLAGS is not None) and (FLAGS.capacity is not None):
+            self.capacity = FLAGS.capacity
+        else:
+            self.capacity = 50
+
         """Network Architecture Parameters"""
         self.batch_size = 1
 
+        if (FLAGS is not None):
+            self.context_output_dim = FLAGS.context_output_dim
+        else:
+            self.context_output_dim = 20
         """Context LSTM.
             Input: <forward, 1>
             Hidden Layers: [30]
             Output: <context_feature, 20>
         """
-        self.context_dims = [1, 30, FLAGS.context_output_dim]
-        self.context_params = LSTMModel.Params(dims=self.context_dims
-            , num_steps=self.num_steps, batch_size=self.batch_size
-            , name='context')
+        self.context_dims = [1, 30, self.context_output_dim]
+        self.context_params = LSTMModel.Params(dims=self.context_dims ,
+                num_steps=self.num_steps, batch_size=self.batch_size ,
+                name='context')
 
         """Local LSTM.
             Input: <context_feature, context_dims[-1]>, <prob, 1>
@@ -63,6 +83,7 @@ class Config(object):
         s = 'Config:'
         s += '\n\tfeature type=' + str(self.feattype)
         s += '\n\tlearning rate=' + str(self.learning_rate)
+        s += '\n\tcapacity=' + str(self.capacity)
         #s += '\n\tlr decay=' + str(self.lr_decay)
         s += '\n\tmax epoch=' + str(self.max_epoch)
         s += '\n\tnum learners=' + str(self.num_learners)
