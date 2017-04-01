@@ -24,10 +24,11 @@ class LSTMModel(object):
     """
     class Params(object):
         def __init__(self, dims=None, num_steps=None, batch_size=None, 
-                reuse=False, name='default'):
+                reuse=False, name='default', name_offset=None):
             """Params.name is a template, while LSTMModel.name is 
                 a instance (usually suffixed with unique numbers)"""
             self.name = name
+            self.name_offset = name_offset
             assert len(dims) >= 3, 'Constructing LSTMModel.Params(%s) \
             at least one input, hidden, output layer' % name
             self.input_dim = dims[0]
@@ -39,6 +40,7 @@ class LSTMModel(object):
             self.num_steps = num_steps
             self.batch_size = batch_size
             self.reuse = reuse
+
     
         @property
         def input_shape(self, num_steps, batch_size):
@@ -50,14 +52,15 @@ class LSTMModel(object):
             return tf.placeholder(tf.float32, 
                     shape=(num_steps, batch_size, self._output_dim))
     
-        def to_string(self):
-            s  = '\tname=' + self.name+'\n'
-            s += '\tinput dim=' + str(self.input_dim)+'\n'
-            s += '\thidden layer sizes=' + str(self.hidden_sizes)+'\n'
-            s += '\toutput dim=' + str(self.output_dim)+'\n'
-            s += '\tnum steps=' + str(self.num_steps)+'\n'
-            s += '\tbatch size=' + str(self.batch_size)
-            return s
+        #def __str__(self):
+        #    s  = '\tname=' + self.name + ' '
+        #    s += str([self.input_dim]+self.hidden_sizes+[self.output_dim])
+        #    s += '\tinput dim=' + str(self.input_dim)+'\n'
+        #    s += '\thidden layer sizes=' + str(self.hidden_sizes)+'\n'
+        #    s += '\toutput dim=' + str(self.output_dim)+'\n'
+        #    s += '\tnum steps=' + str(self.num_steps)+'\n'
+        #    s += '\tbatch size=' + str(self.batch_size)
+        #    return s
 
     @classmethod
     def _get_unique_name(cls, name):
@@ -83,11 +86,15 @@ class LSTMModel(object):
         assert isinstance(params, self.Params), 'params should be an instance'
         'of LSTMModel.Params'
         self.params = params
-        
+        self.scope_map = {}
+
         """different variables/tensors/operations should have different names
             best way to manage names is to use scopes
         """
         fullname = self._get_unique_name(params.name)
+        while (params.name_offset is not None) and (not
+                fullname.endswith(params.name_offset)):
+            fullname = self._get_unique_name(params.name)
         self.fullname = fullname
         self.count_map = {fullname:0}
         with tf.variable_scope(fullname) as scope:
@@ -105,8 +112,28 @@ class LSTMModel(object):
     def from_raw_params(cls, dims, num_steps, batch_size, 
             reuse=False, name='default'):
         params = cls.Params(dims, num_steps, batch_size, reuse, name)
-        return cls(params)
-        
+        return cls(params) 
+
+    def input_scope(self, input_dim=None, reuse=None):
+        if input_dim is None:
+            input_dim = self.params.input_dim
+        vs = self.scope_map.get(input_dim, default=None)
+        if vs is None:
+            vs = tf.VariableScope(None, self.fullname+'/inputs_'+str(input_dim))
+        else:
+            vs.reuse_variables()
+        return vs
+    
+    def output_scope(self, output_dim=None, reuse=None):
+        if output_dim is None:
+            output_dim = self.params.output_dim
+        vs = self.scope_map.get(output_dim, default=None)
+        if vs is None:
+            vs = tf.VariableScope(None, self.fullname+'/outputs_'+str(output_dim))
+        else:
+            vs.reuse_variables()
+        return vs
+
     """Build a One Step feed-forward data flow.
     
     Fields:
@@ -146,7 +173,8 @@ class LSTMModel(object):
                     tf.random_normal_initializer())
                 output_biases = tf.get_variable('out_biases' , [output_dim],
                     initializer=tf.constant_initializer(0.0))
-                outputs = tf.matmul(outputs, output_weights) + output_biases
+                outputs = tf.nn.bias_add(tf.matmul(outputs,
+                    output_weights), output_biases)
                 if activation is not None:
                     outputs = activation(outputs)
             if count == 0:
@@ -161,6 +189,31 @@ class LSTMModel(object):
         else:
             return outputs, next_state
 
-    def initial_state(self, batch_size):
-        return self.cell.zero_state(batch_size, dtype=tf.float32)
+#    """Build a Multi Step feed-forward data flow.
+#    
+#    Fields:
+#        inputs: Tensor or placeholder with shape [batch_size, input_dim]
+#        state: Cell state to start with, if it is None, use cell.zero_state.
+#    
+#    Return:
+#        outputs: Tensor of shape [batch_size, output_dim]
+#        next_state: same shape as state
+#    """
+#    def rnn(self, inputs, state=None, output_dim=None, activation=tf.sigmoid):
+#        if state is None:
+#            batch_size = inputs.shape.as_list()[1]
+#            context_state = context.initial_state(batch_size)
+#
+#        """shape = [num_steps, batch_size, dim]"""
+#        unstacked_features = tf.unstack(feature_batch)
+#        outputs = []
+#        for input_t in unstacked_features:
+#            output_t, context_state = context.feed_forward(input_t,
+#                    context_state, context.params.output_dim, tf.sigmoid)
+#            outputs.append(output_t)
+#        return tf.convert_to_tensor(outputs), context_state
+
+
+    def initial_state(self, batch_size, dtype=tf.float32):
+        return self.cell.zero_state(batch_size, dtype=dtype)
 

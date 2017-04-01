@@ -16,14 +16,14 @@ from rnn_utils import *
 
 from flags import *
 
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]=FLAGS.device
+#os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
+#os.environ["CUDA_VISIBLE_DEVICES"]=FLAGS.device
 
 from LSTMModel import *
 from Config import *
 from Reader import Reader
-from Model import Model
-
+from OfflineModel import OfflineModel
+from OnlineModel import OnlineModel
 
 #"""Generate random batch from data.
 #Inputs:
@@ -214,26 +214,27 @@ def main(_):
     """e.g. foldername=gcc.feat2"""
     """     basename=gcc        """
     """     feattype=feat2      """
-    foldername = (FLAGS.data_path).split('/')[-1]
-    basename = foldername.split('.')[0]
-    feattype = foldername.split('.')[1]
-    model_dir = FLAGS.model_dir
+    #foldername = (FLAGS.data_path).split('/')[-1]
+    #basename = foldername.split('.')[0]
+    #feattype = foldername.split('.')[1]
+    #model_dir = FLAGS.model_dir
     
     #configProto = tf.ConfigProto(allow_soft_placement=True)
     #configProto.gpu_options.allow_growth=True
 
-    config = Config(feattype=feattype, FLAGS=FLAGS)
+    config = Config(FLAGS)
+    print(config)
 
-    print('dataset=', basename, ', #instr=', config.num_instr)
-
-    model = Model(config)
-             
-    with tf.Session(graph=model.graph) as sess:
-        if config.mode == 'offline':
-            model.offline(sess)
+    with tf.Session() as sess:
+        if config.mode=='offline':
+            model = OfflineModel(config, sess)
+        elif config.mode=='online':
+            model = OnlineModel(config, sess)
         else:
-            model.online(sess)
-    
+            raise(ValueError('Unknown Model Mode'))
+             
+        model.run()
+
 #    train_summary_writer = tf.summary.FileWriter(
 #            FLAGS.model_dir+'/tensorboard/train')
 #    test_summary_writer = tf.summary.FileWriter(

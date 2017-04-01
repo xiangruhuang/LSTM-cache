@@ -1,95 +1,113 @@
 from LSTMModel import LSTMModel
+import os
+import inspect
+
 class Config(object):
-    def __init__(self, feattype='feat5', FLAGS=None):
+    def __init__(self, FLAGS):
         """feature 5: <instruction ID, 1> <wakeup_id, 1> <forward, 1> 
             <prob, 1> <hist, self.history_len> <True Label, 1>"""
 
-        """Data Parameters"""
-        if (FLAGS is not None) and (FLAGS.history_len is not None):
-            self.history_len = FLAGS.history_len
-        else:
-            self.history_len = 10
-        if (FLAGS is not None) and (FLAGS.num_steps is not None):
-            self.num_steps = FLAGS.num_steps
-        else:
-            self.num_steps = 100
-
-        if (FLAGS is not None):
-            self.data_path = FLAGS.data_path
-            self.num_instr = int(FLAGS.num_instr)
-            self.split = FLAGS.split
+        """     System and File I/O         """
+        self.data_path = FLAGS.data_path
+        self.save_dir = FLAGS.save_dir
+        self.load_dir = FLAGS.load_dir
+        if FLAGS.device is not None: 
+            os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+            os.environ["CUDA_VISIBLE_DEVICES"]=FLAGS.device
         
-        self.sample_dim = (3 + 1 + self.history_len + 1) * self.num_steps
-        self.global_input_dim = 1 + 1 + self.history_len
 
-        """Learning Parameters"""
-        #self.init_scale = 0.1
-        self.learning_rate = 1e-3
-        #self.lr_decay = 0.99
-        self.max_epoch = 100
-        self.max_batches = self.max_epoch*1000
-        self.keep_prob = 1.0 
-
-        if (FLAGS is not None) and (FLAGS.mode is not None):
-            self.mode = FLAGS.mode
-
-        self.feattype=feattype
-        if (FLAGS is not None) and (FLAGS.num_learners is not None):
-            self.num_learners = FLAGS.num_learners
-        else:
-            self.num_learners = 50
-        if (FLAGS is not None):
-            self.model_dir = FLAGS.model_dir
+        """     Data Specs                  """
+        self.global_input_dim = FLAGS.global_input_dim
+        self.num_instr = FLAGS.num_instr
+        #self.sample_dim = (3 + self.global_input_dim) * self.num_steps
         
-        if (FLAGS is not None) and (FLAGS.capacity is not None):
-            self.capacity = FLAGS.capacity
+        
+        """     Learning Parameters         """
+        self.mode = FLAGS.mode
+        self.split = FLAGS.split
+        self.feattype = FLAGS.feattype
+        self.max_epoch = FLAGS.max_epoch
+        self.num_steps = FLAGS.num_steps
+        self.batch_size = FLAGS.batch_size
+        self.window_size = FLAGS.window_size
+        self.is_training = FLAGS.is_training
+        self.num_learners = FLAGS.num_learners
+        self.learning_rate = FLAGS.learning_rate
+        self.instr_set = FLAGS.instr_set.split(':')
+        self.baseline_only = FLAGS.baseline_only
+        if len(self.instr_set[0]) == 0:
+            self.instr_set = None
+        elif len(self.instr_set) == 1:
+            self.instr_set = [int(self.instr_set[0])]
         else:
-            self.capacity = 50
-
-        """Network Architecture Parameters"""
-        self.batch_size = 1
-
-        if (FLAGS is not None):
-            self.context_output_dim = FLAGS.context_output_dim
+            st = int(self.instr_set[0])
+            if self.instr_set[1] == '':
+                ed = self.num_instr
+            self.instr_set = range(st, ed)
+        self.expr_suffix = FLAGS.instr_set
+        if self.instr_set is not None:
+            self.name_offset = str((self.instr_set[0]+1))
+            if len(self.instr_set) > 1:
+                self.name_offset = '0'
         else:
-            self.context_output_dim = 20
-        """Context LSTM.
+            self.name_offset = None
+
+        """     Network Architecture        """
+        """     Context LSTM.
             Input: <forward, 1>
             Hidden Layers: [30]
-            Output: <context_feature, 20>
+            Output: <context_feature, context_output_dim>
         """
-        self.context_dims = [1, 30, self.context_output_dim]
+        self.context_dims = [int(token) for token in FLAGS.context_dims.split(',')]
         self.context_params = LSTMModel.Params(dims=self.context_dims ,
                 num_steps=self.num_steps, batch_size=self.batch_size ,
                 name='context')
 
-        """Local LSTM.
-            Input: <context_feature, context_dims[-1]>, <prob, 1>
-                , <OPTGEN's history, history_len>
-            Hidden Layers: [50]
-            Output: <True Label, 1>
+        """     Local LSTM.
+            Input: <Context&Global Feature,
+                dim=context.params.output_dim+global_input_dim>
+            Hidden Layers: <Hidden_0, dim=local_hidden_sizes[0]>, ...
+            Output: <True Label, dim=1>
         """
-        
-        if (FLAGS is not None) and (FLAGS.local_hidden_size is not None):
-            self.local_hidden_size = FLAGS.local_hidden_size
-        else:
-            self.local_hidden_size = 50
-        self.local_dims = [self.context_dims[-1] + 1 + self.history_len,
-            self.local_hidden_size, 1]
+        self.local_hidden_sizes = [int(token) for token in
+                FLAGS.local_hidden_size.split(',')]
+        self.local_dims = [self.context_dims[-1]+ self.global_input_dim]+self.local_hidden_sizes + [1]
         self.local_params = LSTMModel.Params(dims=self.local_dims,
-            num_steps=self.num_steps, batch_size=self.batch_size, name='local')
+            num_steps=self.num_steps, batch_size=self.batch_size, name='local',
+            name_offset=self.name_offset)
+        
 
-    def to_string(self):
-        s = 'Config:'
-        s += '\n\tfeature type=' + str(self.feattype)
-        s += '\n\tlearning rate=' + str(self.learning_rate)
-        s += '\n\tcapacity=' + str(self.capacity)
-        #s += '\n\tlr decay=' + str(self.lr_decay)
-        s += '\n\tmax epoch=' + str(self.max_epoch)
-        s += '\n\tnum learners=' + str(self.num_learners)
-        s += '\n\tkeep prob=' + str(self.keep_prob)
-        s += '\n\tlocal hidden size=' + str(self.local_hidden_size)
-        s += '\n'+self.context_params.to_string()
-        s += '\n'+self.local_params.to_string()
+
+    def __str__(self):
+        attributes = inspect.getmembers(self, lambda a :
+                not(inspect.isroutine(a)))
+        toStr = 'Config:'
+        for a in attributes:
+            if not(a[0].startswith('__') and a[0].endswith('__')):
+                toStr += '\n\t' + str(a)
+        toStr += '\n'
+        return toStr
+        #s = 'Config:'
+        #s += '\n\tLearning Params:'
+        #s += '\n\t\tmode=' + str(self.mode)
+        #s += '\n\t\tsplit=' + str(self.split)
+        #
+        #s += '\n\tfeature type=' + str(self.feattype)
+        #s += '\n\tmax epoch=' + str(self.max_epoch)
+        #s += '\n\t#steps=' + str(self.num_steps)
+        #s += '\n\tbatch_size=' + str(self.batch_size)
+        #s += '\n\twindow_size=' + str(self.window_size)
+        #s += '\n\tis_training=' + str()
+        #self.is_training = FLAGS.is_training
+        #self.num_learners = FLAGS.num_learners 
+        #s += '\n\tlearning rate=' + str(self.learning_rate)
+        #s += '\n\tcapacity=' + str(self.capacity)
+        ##s += '\n\tlr decay=' + str(self.lr_decay)
+        #s += '\n\tmax epoch=' + str(self.max_epoch)
+        #s += '\n\tnum learners=' + str(self.num_learners)
+        #s += '\n\tkeep prob=' + str(self.keep_prob)
+        #s += '\n\tlocal hidden size=' + str(self.local_hidden_size)
+        #s += '\n'+self.context_params.to_string()
+        #s += '\n'+self.local_params.to_string()
         return s
     

@@ -159,4 +159,23 @@ Outputs:
 def to_tuple_states(structure, flat_states):
     return nest.pack_sequence_as(structure=structure, flat_sequence=flat_states)
 
+"""Load variables and Return current epoch
+Args:
+    var_list: list of variables to restore
+    load_dir: directory containing checkpoints, latest checkpoint is loaded
 
+Returns:
+    current_epoch: i.e. the suffix of the latest checkpoint file
+"""
+def load_vars(sess, var_list, load_dir):
+    loader = tf.train.Saver(var_list)
+
+    lc = tf.train.latest_checkpoint(load_dir+'/')
+    if lc is not None:
+        var_names = [v.name for v in var_list]
+        print("restoring %s from %s" % (str(var_names), load_dir+'/'))
+        loader.restore(sess, lc)
+        return int(str(lc).split('ckpt-')[-1])
+    else:
+        print('nothing exists in %s' % load_dir)
+        return -1
