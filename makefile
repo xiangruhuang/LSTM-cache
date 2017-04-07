@@ -36,18 +36,7 @@ all: omnetpp.train
 	echo dataset=$b feature type=$(feattype)
 	$(eval num_instr = $($(b).num_instr))
 	mkdir -p $(save_dir)
-	#((stdbuf -oL python main.py \
-	#	--data_path=$(data_path) --save_dir=$(save_dir) --device=$(device) \
-	#	--load_dir=$(load_dir) \
-	#	--num_instr=$(num_instr) --global_input_dim=$(global_input_dim) \
-	#	--context_dims=$(context_dims) --local_hidden_size=$(local_hidden_size) \
-	#	--learning_rate=$(learning_rate) --max_epoch=$(max_epoch) --split=$(split) \
-	#	--mode=$(mode) --feattype=$(feattype) --num_learners=$(num_learners) \
-	#	--num_steps=$(num_steps) --batch_size=$(batch_size) --window_size=$(window_size) \
-	#	--is_training=$(is_training) --instr_set=$(instr_set) --baseline_only=$(baseline_only)\
-	#	) 2>&1) >> $(save_dir)/log$(instr_set)
-	
-	python main.py \
+	((stdbuf -oL python main.py \
 		--data_path=$(data_path) --save_dir=$(save_dir) --device=$(device) \
 		--load_dir=$(load_dir) \
 		--num_instr=$(num_instr) --global_input_dim=$(global_input_dim) \
@@ -56,6 +45,17 @@ all: omnetpp.train
 		--mode=$(mode) --feattype=$(feattype) --num_learners=$(num_learners) \
 		--num_steps=$(num_steps) --batch_size=$(batch_size) --window_size=$(window_size) \
 		--is_training=$(is_training) --instr_set=$(instr_set) --baseline_only=$(baseline_only)\
+		) 2>&1) >> $(save_dir)/log$(instr_set)
+	
+	#python main.py \
+	#	--data_path=$(data_path) --save_dir=$(save_dir) --device=$(device) \
+	#	--load_dir=$(load_dir) \
+	#	--num_instr=$(num_instr) --global_input_dim=$(global_input_dim) \
+	#	--context_dims=$(context_dims) --local_hidden_size=$(local_hidden_size) \
+	#	--learning_rate=$(learning_rate) --max_epoch=$(max_epoch) --split=$(split) \
+	#	--mode=$(mode) --feattype=$(feattype) --num_learners=$(num_learners) \
+	#	--num_steps=$(num_steps) --batch_size=$(batch_size) --window_size=$(window_size) \
+	#	--is_training=$(is_training) --instr_set=$(instr_set) --baseline_only=$(baseline_only)\
 
 offline_tensorboard:
 	tensorboard --logdir=omnetpp:./omnetpp/offline_test/tensorboard/

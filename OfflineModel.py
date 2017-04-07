@@ -106,9 +106,9 @@ class OfflineModel(object):
         """minimizer for this lstm"""
         if config.is_training:
             global_step = tf.Variable(0, trainable=False)
-            learning_rate = tf.train.exponential_decay(config.learning_rate,
-                    global_step, 10, 0.96)
-            optimizer = tf.train.AdamOptimizer(learning_rate)
+            #learning_rate = tf.train.exponential_decay(config.learning_rate,
+            #        global_step, 1000, 0.96)
+            optimizer = tf.train.AdamOptimizer(config.learning_rate)
             opt = optimizer.minimize(cost, var_list=tf.trainable_variables(),
                     global_step=global_step)
 
