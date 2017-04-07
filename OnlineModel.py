@@ -4,7 +4,7 @@ from __future__ import print_function
 
 from utils import *
 
-from LSTMModel import LSTMModel
+from MultiLSTMCell import *
 
 from rnn_utils import *
 from Reader import *
@@ -185,8 +185,6 @@ class OnlineModel(object):
 
             """replace features"""
             self.reader.replace_features(self.sess, self.context, self.load_dir)
-        else:
-            raise(ValueError('needs a positive context output dim'))
         
         """Local LSTM"""
         self.cell = LSTMModel(config.local_params)

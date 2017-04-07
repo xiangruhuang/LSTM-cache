@@ -14,7 +14,7 @@ arr = numpy.fromfile(sys.argv[1]+'/instr.all.bin').reshape([-1,
 length = arr.shape[0]//10000*10000
 arr = arr[:length, :]
 
-num_instr=1498
+num_instr=2348#1498
 num_learners=100
 
 instr_ids = arr[:, 0].astype(int)
@@ -46,10 +46,8 @@ for i in range(100):
     if (i + 1) == num_learners:
         suffix = str(i)+':'
     pred_i = []
-    #with open('omnetpp/online_t10_b100_n10/pred'+suffix) as fin:
-    if i <= 50:
-        with open('omnetpp/'+sys.argv[2]+'/pred'+suffix) as fin:
-            pred_i = [float(line.strip())for line in fin.readlines()]
+    with open(sys.argv[2]+'/pred'+suffix) as fin:
+        pred_i = [float(line.strip())for line in fin.readlines()]
     pred.append(pred_i)
 
 st = [0 for i in range(num_learners)]
@@ -59,14 +57,20 @@ down = 0.0
 up_ = [0.0 for i in range(num_learners)]
 down_ = [0.0 for i in range(num_learners)]
 #print(len([t for t in range(length) if learner_id[t] == 87]))
+count = 0.0
 for t in range(length):
     i = learner_id[t]
     #print('t=%d, i=%d, st_i=%d, len_i=%d' % (t, i, st[i], len(pred[i])))
     if st[i] < len(pred[i]):
         pred_t = pred[i][st[i]]
     else:
+        count += 1.0
         pred_t = baseline_pred[t]
     st[i] += 1
+    if (t < length//4.0):
+        pred_t = baseline_pred[t]
+    if t < length//4.0*3:
+        continue
     if abs(pred_t - labels[t])<=1e-3:
         up += 1.0
         up_[i] += 1.0
@@ -74,9 +78,10 @@ for t in range(length):
     down_[i] += 1.0
     #print('t=%d, i=%d, st[i]=%d' % (t, i, st[i]))
 
-print('up=%f, down=%f' % (up, down))
 for i in range(num_learners):
-    print('i=%d, acc_i=%f' % (i, up_[i]/down_[i]))
+    if (down_[i] > 0):
+        print('i=%d, acc_i=%f' % (i, up_[i]/down_[i]))
+print('up=%f, down=%f, count=%f' % (up, down, count))
 print('total_acc=%f' % (up/down))
 
 #pred = [float(line.strip().split(' ')[0]) for line in lines]

@@ -1,4 +1,4 @@
-from LSTMModel import LSTMModel
+from MultiLSTMCell import *
 import os
 import inspect
 
@@ -59,9 +59,9 @@ class Config(object):
             Output: <context_feature, context_output_dim>
         """
         self.context_dims = [int(token) for token in FLAGS.context_dims.split(',')]
-        self.context_params = LSTMModel.Params(dims=self.context_dims ,
+        self.context_params = MultiLSTMCell.Params(dims=self.context_dims ,
                 num_steps=self.num_steps, batch_size=self.batch_size ,
-                name='context')
+                name='context', num_alts=1)
 
         """     Local LSTM.
             Input: <Context&Global Feature,
@@ -72,9 +72,9 @@ class Config(object):
         self.local_hidden_sizes = [int(token) for token in
                 FLAGS.local_hidden_size.split(',')]
         self.local_dims = [self.context_dims[-1]+ self.global_input_dim]+self.local_hidden_sizes + [1]
-        self.local_params = LSTMModel.Params(dims=self.local_dims,
+        self.local_params = MultiLSTMCell.Params(dims=self.local_dims,
             num_steps=self.num_steps, batch_size=self.batch_size, name='local',
-            name_offset=self.name_offset)
+            name_offset=self.name_offset, num_alts=self.num_learners)
         
 
 

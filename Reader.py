@@ -154,21 +154,25 @@ class Reader(object):
             ranges = tf.constant([ [b,t] for t in range(num_steps) for b
                 in range(batch_size) ], dtype=tf.int64)
             selected_learner_ids = tf.gather(self.learner_id_ts, indices)
-            selected_learner_ids = tf.expand_dims(selected_learner_ids, -1)
-            condition_indices = tf.concat([ranges,selected_learner_ids], axis=1)
-            condition_indices_sparse = tf.SparseTensor( condition_indices,
-                    tf.constant( True, shape=[ num_steps*batch_size ],
-                        dtype=tf.bool ), [ batch_size, num_steps,
-                            config.num_learners ])
-
-            condition_batch = tf.sparse_tensor_to_dense(
-                    condition_indices_sparse, default_value=False )
-            condition_batch = tf.transpose(condition_batch, [1,0,2])
-            evals['condition_batch']=condition_batch
+            #selected_learner_ids = tf.expand_dims(selected_learner_ids, -1)
+            #condition_indices = tf.concat([ranges,selected_learner_ids], axis=1)
+            #condition_indices_sparse = tf.SparseTensor( condition_indices,
+            #        tf.constant( True, shape=[ num_steps*batch_size ],
+            #            dtype=tf.bool ), [ batch_size, num_steps,
+            #                config.num_learners ])
             
-            indicator_batch = tf.to_float(condition_batch)
-            evals['indicator_batch']=indicator_batch
-        
+            #condition_batch = tf.sparse_tensor_to_dense(
+            #        condition_indices_sparse, default_value=False )
+            #condition_batch = tf.transpose(condition_batch, [1,0,2])
+            #evals['condition_batch']=condition_batch
+            
+            #indicator_batch = tf.to_float(condition_batch)
+            #evals['indicator_batch']=indicator_batch
+
+            switch_batch = tf.stack(tf.split(selected_learner_ids, batch_size))
+            switch_batch = tf.transpose(switch_batch)
+            evals['switch'] = switch_batch
+
         feature_batch = tf.gather(self.feature_ts, batch_indices)
         evals['feature_batch'] = feature_batch
 

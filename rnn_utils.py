@@ -168,6 +168,8 @@ Returns:
     current_epoch: i.e. the suffix of the latest checkpoint file
 """
 def load_vars(sess, var_list, load_dir):
+    if len(var_list) == 0:
+        return
     loader = tf.train.Saver(var_list)
 
     lc = tf.train.latest_checkpoint(load_dir+'/')
@@ -179,3 +181,112 @@ def load_vars(sess, var_list, load_dir):
     else:
         print('nothing exists in %s' % load_dir)
         return -1
+
+"""One Step batched switched matrix multiplication, switch decides which
+alternative of weights and biases should the data flow into.
+
+Args:
+    inputs: Tensor of Shape [batch_size, input_dim], dtype should be
+        tf.float32
+    num_alts: number of alternatives
+    output_size: int
+    switch: Tensor of Shape [batch_size], each element should be in range of
+        [0, num_alts), dtype should be tf.int32
+
+Returns:
+    linear: Tensor of shape [batch_size, output_size]
+
+weights will have shape [num_alts, input_dim, output_size]
+biases will have shape [num_alts, output_size]
+weights and biases will be created or retrived from current variable_scope
+
+"""
+
+def switched_linear(inputs, num_alts, output_size, switch):
+    [batch_size, input_dim] = inputs.shape.as_list()
+    assert switch.shape.as_list() == [batch_size], 'switch.shape'
+    name_suffix = '_a%d_i%d_o%d' % (num_alts, input_dim, output_size)
+    weight_shape = [num_alts, input_dim, output_size]
+    weights = create_or_reuse_variable('weights'+name_suffix, weight_shape,
+            tf.float32, tf.random_normal_initializer(dtype=tf.float32))
+
+    bias_shape = [num_alts, output_size]
+    biases = create_or_reuse_variable('biases'+name_suffix, bias_shape,
+            tf.float32, tf.constant_initializer(0.0, dtype=tf.float32))
+ 
+    selected_weights = tf.gather(weights, switch)
+    assert selected_weights.shape.as_list() == [batch_size
+            ]+weight_shape[1:]
+
+    selected_biases = tf.gather(biases, switch)
+    assert selected_biases.shape.as_list() == [batch_size
+            ]+bias_shape[1:]
+
+    matmul = tf.matmul(tf.expand_dims(inputs, 1), selected_weights)
+    matmul = tf.squeeze(matmul, axis=1)
+    return tf.sigmoid(matmul+selected_biases)
+
+"""One Step batched matrix multiplication
+
+Args:
+    inputs: Tensor of Shape [batch_size, input_dim], dtype should be
+        tf.float32
+    output_size: int
+
+Returns:
+    linear: Tensor of shape [batch_size, output_size]
+
+weights will have shape [num_alts, input_dim, output_size]
+biases will have shape [num_alts, output_size]
+weights and biases will be created or retrived from current variable_scope
+
+"""
+def linear(inputs, output_size):
+    [batch_size, input_dim] = inputs.shape.as_list()
+    name_suffix = '_i%d_o%d' % (input_dim, output_size)
+    weight_shape = [input_dim, output_size]
+    weights = create_or_reuse_variable('weights'+name_suffix, weight_shape,
+            tf.float32, tf.random_normal_initializer(dtype=tf.float32))
+
+    bias_shape = [output_size]
+    biases = create_or_reuse_variable('biases'+name_suffix, bias_shape,
+            tf.float32, tf.constant_initializer(0.0, dtype=tf.float32))
+
+    matmul = tf.matmul(inputs, weights)
+    return tf.sigmoid(tf.nn.bias_add(matmul, biases))
+
+"""
+compute a + b
+    
+Args:
+    new_index: Tensor of same shape as value
+    axis: D_{axis} will be added
+
+Returns:
+    A Sparse Tensor of dense_shape [D_0*...*D_{N-1}, N+1]
+        same value and indices
+"""
+
+def expand_indices(new_index, axis=0, dtype=tf.int64):
+    assert isinstance(new_index, tf.Tensor), "new_index should be a Tensor"
+    dims = new_index.shape.as_list()
+    args = (range(dim) for dim in dims)
+    indices = tf.meshgrid(*args, indexing = 'ij')
+    indices.insert(axis, new_index)
+    for i in range(len(indices)):
+        if indices[i].dtype != dtype:
+            indices[i] = tf.cast(indices[i], dtype)
+    indices = tf.stack(indices, axis=-1)
+    indices = tf.reshape(indices, shape=[-1, (len(dims)+1)])
+    return indices 
+
+def create_or_reuse_variable(name, shape, dtype, initializer, scope=None):
+    if scope is None:
+        scope = tf.get_variable_scope()
+    global_name = scope.name+'/'+name 
+    existing_vars = [v for v in tf.global_variables() if
+            v.name.startswith(global_name)]
+    if len(existing_vars) > 0:
+        scope.reuse_variables()
+    return tf.get_variable(name, shape, dtype, initializer=initializer)
+

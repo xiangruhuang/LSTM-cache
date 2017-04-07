@@ -19,7 +19,7 @@ from flags import *
 #os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
 #os.environ["CUDA_VISIBLE_DEVICES"]=FLAGS.device
 
-from LSTMModel import *
+from MultiLSTMCell import *
 from Config import *
 from Reader import Reader
 from OfflineModel import OfflineModel
