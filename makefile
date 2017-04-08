@@ -64,13 +64,21 @@ null:=
 space:= $(null) #
 comma:= ,
 data=omnetpp
+port=6006
 
 %.tensorboard:
 	$(eval names := $(basename $@))
 	$(eval names := $(subst +, ,$(names)))
 	$(eval LOGDIR := $(foreach name,$(names),$(name):$(data)/$(name)/tensorboard))
 	$(eval LOGDIR := $(subst $(space),$(comma),$(LOGDIR)))
-	tensorboard --logdir=$(LOGDIR)
+	tensorboard --logdir=$(LOGDIR) --port=$(port)
+
+%.brief:
+	$(eval names := $(basename $@))
+	$(eval names := $(subst +, ,$(names)))
+	$(eval LOGDIR := $(foreach name,$(names),$(name):$(data)/$(name)/brief))
+	$(eval LOGDIR := $(subst $(space),$(comma),$(LOGDIR)))
+	tensorboard --logdir=$(LOGDIR) --port=$(port)
 
 all_tensorboard:
 	tensorboard --logdir=selected:./tensorboard/

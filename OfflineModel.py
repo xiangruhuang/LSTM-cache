@@ -185,24 +185,30 @@ class OfflineModel(object):
             print('epoch=%d, #train_batch=%d, #test_batch=%d...' % (e,
                 num_train_batches, num_test_batches))
 
-            """Clear Ups and Downs for this epoch"""
-            sess.run(self.clear_ups_and_downs)
 
             """Training"""
-            train_time = -time.time()
+
+            """Clear Ups and Downs for this epoch"""
             if config.is_training:
-                self.trainer.run(sess, num_train_batches, False)
-            train_time += time.time()
-            print('\ttrain_time=%f' % train_time)
+                sess.run(self.clear_ups_and_downs)
+                train_time = -time.time()
+                self.trainer.run(sess, num_train_batches, False,
+                        self.train_brief_summary_writer)
+                train_time += time.time()
+                print('\ttrain_time=%f' % train_time)
 
             """Testing"""
-            test_time = -time.time()   
-            self.tester.run(sess, num_test_batches, True)
+            
+            """Clear Ups and Downs for this epoch"""
+            sess.run(self.clear_ups_and_downs)
+            test_time = -time.time()
+            self.tester.run(sess, num_test_batches, True,
+                    self.test_brief_summary_writer)
             test_time += time.time()
             print('\ttest_time=%f' % test_time)
 
             """Saving"""
-            save_time = -time.time()   
+            save_time = -time.time()
             if config.is_training:
                 self.saver.save(sess, config.save_dir+'/ckpt', global_step=e)
             save_time += time.time()
@@ -223,6 +229,10 @@ class OfflineModel(object):
                     config.save_dir+'/tensorboard/train')
             self.test_summary_writer = tf.summary.FileWriter(
                     config.save_dir+'/tensorboard/test')
+            self.train_brief_summary_writer = tf.summary.FileWriter(
+                    config.save_dir+'/brief/train')
+            self.test_brief_summary_writer = tf.summary.FileWriter(
+                    config.save_dir+'/brief/test')
             
             """Statistics to plot"""
             self.num_train_samples = tf.Variable(tf.constant(0, dtype=tf.int64))
@@ -262,7 +272,8 @@ class OfflineLearner(object):
         self.feed_indices = feed_indices
         self.summary_writer = summary_writer
 
-    def run(self, sess, num_batches=None, sequential=False):
+    def run(self, sess, num_batches=None, sequential=False,
+            brief_summary_writer=None):
         config = self.config
         log = self.log
         evals = self.evals
@@ -278,3 +289,6 @@ class OfflineLearner(object):
                 indices = log.random_indices()
             vals = sess.run(evals, feed_dict={self.feed_indices:indices})
             summary_writer.add_summary(vals['summary'], vals['num_samples'])
+            if (Iter + 1 == num_batches) and (brief_summary_writer is not None):
+                brief_summary_writer.add_summary(vals['summary'],
+                        vals['num_samples'])
